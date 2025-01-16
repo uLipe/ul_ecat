@@ -1,0 +1,7 @@
+build/
+__pycache__/
+.pytest_cache/
+*.gcno
+*.gcda
+coverage.info
+coverage_html/

@@ -1,0 +1,40 @@
+# Build and test on every push and pull request (Linux).
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build build-essential python3-pytest
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DUL_ECAT_BUILD_TESTS=ON
+          -DUL_ECAT_BUILD_SHARED=ON
+          -DUL_ECAT_BUILD_TOOLS=OFF
+
+      - name: Build
+        run: cmake --build build --parallel $(nproc)
+
+      - name: CTest
+        working-directory: build
+        run: ctest --output-on-failure
