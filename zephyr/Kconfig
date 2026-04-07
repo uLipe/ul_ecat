@@ -1,0 +1,31 @@
+# Copyright (c) ul_ecat contributors
+# SPDX-License-Identifier: MIT
+
+config UL_ECAT
+	bool "ul_ecat EtherCAT master (library)"
+	depends on NETWORKING
+	help
+	  Minimal EtherCAT master stack: frames, AL, scan, DC hooks.
+	  Packet sockets may capture all L2 traffic on the interface; see docs.
+
+if UL_ECAT
+
+config UL_ECAT_MASTER
+	bool "EtherCAT master core (scan, queue, DC)"
+	depends on UL_ECAT
+	select NET_SOCKETS
+	select NET_SOCKETS_PACKET
+	imply NET_IPV4
+	imply NET_IPV6
+	imply NET_SOCKETS_POSIX_NAMES
+	help
+	  Requires CONFIG_NET_SOCKETS_PACKET for raw EtherCAT (ethertype 0x88A4).
+
+config UL_ECAT_TRANSPORT_NETDEV
+	bool "TX frames via net_if (net_pkt) instead of socket send"
+	depends on UL_ECAT_MASTER
+	help
+	  Sends built Ethernet frames with net_if_queue_tx() for direct driver TX.
+	  RX and timing still use the packet socket on the same interface.
+
+endif # UL_ECAT

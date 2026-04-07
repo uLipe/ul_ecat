@@ -27,6 +27,8 @@ add_library(ul_ecat
     src/ul_ecat_al.c
     src/ul_ecat_frame.c
     src/ul_ecat_master.c
+    src/osal/osal_linux.c
+    src/transport/transport_linux.c
 )
 add_library(ul_ecat::ul_ecat ALIAS ul_ecat)
 
@@ -49,6 +51,8 @@ if(UL_ECAT_BUILD_SHARED)
         src/ul_ecat_al.c
         src/ul_ecat_frame.c
         src/ul_ecat_master.c
+        src/osal/osal_linux.c
+        src/transport/transport_linux.c
     )
     add_library(ul_ecat::shared ALIAS ul_ecat_shared)
     target_include_directories(ul_ecat_shared

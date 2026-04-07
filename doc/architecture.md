@@ -1,21 +1,145 @@
 # Architecture
 
-## Layers
+This document describes **layers**, **platform boundaries**, and **runtime behavior** of `ul_ecat`. Wire-level field layouts are summarized in [`mental-model.md`](mental-model.md).
 
-1. **Wire format** (`ul_ecat_frame.c` / `ul_ecat_frame.h`): builds and parses Ethernet + EtherCAT PDU + datagrams (little-endian fields, WKC after data).
-2. **AL helpers** (`ul_ecat_al.c` / `ul_ecat_al.h`): AL Control / AL Status bit masks, acknowledge bit, and error indication (used by the master and unit tests).
-3. **Master logic** (`ul_ecat_master.c`): slave database, scan (APWR + identity reads), AL state machine via blocking FPRD/FPWR, optional DC queue, event loop.
-4. **Transport**: Linux `AF_PACKET` `SOCK_RAW` bound to `ETH_P_ETHERCAT` (`0x88A4`).
+## Overview: portable core vs platform glue
+
+The **master** and **frame/AL** code are shared across Linux, Zephyr, and NuttX. Anything that depends on the kernel or RTOS (mutexes, threads, monotonic time, raw sockets) lives behind two narrow interfaces:
+
+| Interface | Header | Responsibility |
+|-----------|--------|----------------|
+| **OSAL** | [`include/ul_ecat_osal.h`](../include/ul_ecat_osal.h) | Mutexes (trx / queue / event loop), worker thread, monotonic time, sleep, condition wait/signal for the event queue |
+| **Transport** | [`include/ul_ecat_transport.h`](../include/ul_ecat_transport.h) | Open/close a packet socket, send/recv Ethernet frames, wait until readable (with timeout) |
+
+Implementations are **selected at link time** (each build links exactly one OSAL + one transport for the chosen OS).
+
+```mermaid
+flowchart TB
+  subgraph portable [Portable no OS headers]
+    Frame[ul_ecat_frame.c]
+    Al[ul_ecat_al.c]
+    Master[ul_ecat_master.c]
+  end
+  subgraph osal_api [OSAL API]
+    OsalH[ul_ecat_osal.h]
+  end
+  subgraph tr_api [Transport API]
+    TrH[ul_ecat_transport.h]
+  end
+  subgraph impl_linux [Linux]
+    OsalL[osal_linux.c]
+    TrL[transport_linux.c]
+  end
+  subgraph impl_zephyr [Zephyr]
+    OsalZ[osal_zephyr.c]
+    TrZ[transport_zephyr.c]
+    TrZn[transport_zephyr_netdev.c optional]
+  end
+  subgraph impl_nuttx [NuttX]
+    OsalN[osal_nuttx.c]
+    TrN[transport_nuttx.c]
+  end
+  Master --> Frame
+  Master --> Al
+  Master --> OsalH
+  Master --> TrH
+  OsalH -.-> OsalL
+  OsalH -.-> OsalZ
+  OsalH -.-> OsalN
+  TrH -.-> TrL
+  TrH -.-> TrZ
+  TrH -.-> TrZn
+  TrH -.-> TrN
+```
+
+## Layer responsibilities
+
+### 1. Wire format (`ul_ecat_frame.c` / `ul_ecat_frame.h`)
+
+- Build Ethernet frames with EtherCAT ethertype `0x88A4`.
+- Encode/decode EtherCAT PDU length + datagrams (little-endian, WKC after data).
+- **Does not** open sockets or call the OS; pure bytes in/out.
+
+### 2. AL helpers (`ul_ecat_al.c` / `ul_ecat_al.h`)
+
+- AL Control / AL Status bit masks, acknowledge handshake, error indication.
+- Used by the master and unit tests; **no** network I/O.
+
+### 3. Master core (`ul_ecat_master.c`)
+
+- Slave database, **scan** (APWR station address + identity reads), **blocking** AL polling (FPRD/FPWR/APWR) via `exchange_ec_payload`.
+- Optional **DC** queue and minimal sync logic when enabled.
+- **Batched send** and **non-blocking receive** on the worker path; **event loop** for DC/frame callbacks (`ul_ecat_eventloop_run`).
+- **Depends only** on OSAL + transport + frame + AL — **no** direct `linux/*`, `zephyr/*`, or NuttX-specific headers.
+
+### 4. OSAL (implementation files under `src/osal/`)
+
+| Function group | Role |
+|----------------|------|
+| `ul_ecat_osal_*_lock/unlock` (trx, q, evt) | Serialize access to the socket path, datagram queue, and event queue |
+| `ul_ecat_osal_worker_start` / `join` | Background thread for 1 ms cyclic work (DC hook, batch TX, non-blocking RX) |
+| `ul_ecat_osal_monotonic_ns`, `sleep_us`, `sleep_until_ns` | Timebase for DC comparison and periodic cadence |
+| `ul_ecat_osal_evt_wait` / `signal` | Block `ul_ecat_eventloop_run` until an event is posted |
+| `ul_ecat_osal_realtime_hint` | Best-effort RT scheduling (Linux: `mlockall` + `SCHED_FIFO`; Zephyr: log; NuttX: pthread scheduling without locked memory) |
+
+### 5. Transport (implementation files under `src/transport/`)
+
+| Function | Role |
+|----------|------|
+| `ul_ecat_transport_open` | Create packet socket, bind to named interface for EtherCAT ethertype |
+| `send` / `recv` | Full Ethernet frames (built by `ul_ecat_frame`) |
+| `wait_readable` | Used for blocking exchanges (scan/AL) and polling in non-blocking RX |
+
+Zephyr optionally swaps **TX** to `net_if_queue_tx` via [`transport_zephyr_netdev.c`](../src/transport/transport_zephyr_netdev.c) when `CONFIG_UL_ECAT_TRANSPORT_NETDEV` is set; RX still uses the packet socket.
+
+## Data paths
+
+Two interaction patterns share the same transport but use different locking:
+
+```mermaid
+flowchart LR
+  subgraph blocking [Blocking path]
+    Scan[scan / AL polling]
+    Ex[exchange_ec_payload]
+    Sock1[transport send/recv]
+    Scan --> Ex --> Sock1
+  end
+  subgraph worker [Worker path]
+    Tick[1 ms tick]
+    Batch[send_batched_frames]
+    NB[receive_frames_nonblock]
+    Sock2[transport send/recv]
+    Tick --> Batch --> Sock2
+    Tick --> NB --> Sock2
+  end
+```
+
+- **Blocking path:** holds the **trx** OSAL lock for the full send + wait + recv used during discovery and AL state changes.
+- **Worker path:** same trx lock around batch send and non-blocking receive; **queue** lock protects the internal datagram queue only.
 
 ## Threads and locking
 
-- A **periodic thread** runs `dc_cycle`, `ul_ecat_send_batched_frames`, and `ul_ecat_receive_frames_nonblock` on a 1 ms tick (configurable constant in code).
-- A **mutex** (`g_trx_mutex`) serializes raw socket access between the periodic thread and **blocking** exchanges used during scan / AL polling (so the CLI does not race the cyclic thread).
-
-## Queue
-
-Datagrams are stored in **fixed buffers** (no per-datagram `malloc` in the hot path). The queue is protected by `g_q_mutex`.
+- A **worker thread** (started in `ul_ecat_master_init`) runs `dc_cycle`, `ul_ecat_send_batched_frames`, and `ul_ecat_receive_frames_nonblock` on a configurable **1 ms** cadence (`CYCLE_TIME_NS` in the master source).
+- **Trx mutex:** serializes raw socket use between the worker and **blocking** exchanges (so scan/CLI does not race the cyclic path).
+- **Queue mutex:** protects the fixed-size datagram queue (`Q_MAX`); no per-datagram `malloc` on the hot path.
+- **Event mutex + wait/signal:** feeds `ul_ecat_eventloop_run()` in the application thread; callbacks should not block the worker if you extend the design.
 
 ## Event loop
 
-DC and frame events are posted to a bounded queue consumed by `ul_ecat_eventloop_run()` in the application thread (callbacks must not block the RT thread if you extend this design).
+DC and raw frame events are posted to a **bounded queue** (`MAX_EVENTS`). The application calls `ul_ecat_eventloop_run()` and registers callbacks via `ul_ecat_register_dc_callback` / `ul_ecat_register_frame_callback`.
+
+## File map by platform
+
+| Component | Linux | Zephyr | NuttX |
+|-----------|-------|--------|-------|
+| OSAL | `src/osal/osal_linux.c` | `src/osal/osal_zephyr.c` | `src/osal/osal_nuttx.c` |
+| Transport | `src/transport/transport_linux.c` | `src/transport/transport_zephyr.c` (or `transport_zephyr_netdev.c`) | `src/transport/transport_nuttx.c` |
+| Build entry | Root [`CMakeLists.txt`](../CMakeLists.txt) | [`zephyr/CMakeLists.txt`](../zephyr/CMakeLists.txt) | [`nuttx/Make.defs`](../nuttx/Make.defs) / [`nuttx/ul_ecat_sources.cmake`](../nuttx/ul_ecat_sources.cmake) |
+
+Integration steps for RTOS builds: [README § Quick start](../README.md#quick-start-zephyr-and-nuttx), [`zephyr-module.md`](zephyr-module.md), [`nuttx-module.md`](nuttx-module.md).
+
+## Related documents
+
+- [`mental-model.md`](mental-model.md) — PDU/datagram/WKC/AL field layout
+- [`porting-guide.md`](porting-guide.md) — adding a new OSAL/transport pair
+- [`repository-layout.md`](repository-layout.md) — directory tree

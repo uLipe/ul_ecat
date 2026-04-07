@@ -1,0 +1,5 @@
+# Zephyr module: https://docs.zephyrproject.org/latest/develop/modules.html
+name: ul_ecat
+build:
+  cmake: zephyr
+  kconfig: zephyr/Kconfig

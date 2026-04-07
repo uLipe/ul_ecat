@@ -1,0 +1,16 @@
+# Merge into board defconfig (menuconfig) — reference NuttX 12.x / master.
+# Paths and symbol names may differ slightly between releases.
+
+CONFIG_NET=y
+CONFIG_NET_ETHERNET=y
+CONFIG_NET_PKT=y
+CONFIG_NET_PKT_PREALLOC_CONNS=2
+
+# POSIX threads + clocks (required by osal_nuttx.c)
+CONFIG_LIBC=y
+CONFIG_PTHREAD_MUTEX_TYPES=y
+
+# Example: enable the scan app (after sourcing Kconfig)
+# CONFIG_UL_ECAT=y
+# CONFIG_UL_ECAT_MASTER=y
+# CONFIG_EXAMPLES_UL_ECAT_SCAN=y

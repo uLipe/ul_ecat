@@ -10,24 +10,17 @@
 #include "ul_ecat_master.h"
 #include "ul_ecat_al.h"
 #include "ul_ecat_frame.h"
+#include "ul_ecat_osal.h"
+#include "ul_ecat_transport.h"
 
 #include <errno.h>
 #include <netinet/in.h>
-#include <net/if.h>
-#include <pthread.h>
-#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <sys/mman.h>
-#include <sys/select.h>
-#include <sys/socket.h>
-#include <time.h>
 #include <unistd.h>
 
 #include <arpa/inet.h>
-#include <linux/if_packet.h>
 
 #define CYCLE_TIME_NS 1000000UL
 #define Q_MAX 32
@@ -40,12 +33,9 @@
 #define ESC_REG_DCSYS0 0x0910u
 
 static int g_sockfd = -1;
-static pthread_t g_thread_id;
 static unsigned char g_dst_mac[6];
 static unsigned char g_src_mac[6];
 static volatile int g_running = 1;
-
-static pthread_mutex_t g_trx_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static int g_dc_state;
 static int64_t g_dc_offset;
@@ -60,7 +50,6 @@ static struct {
     uint8_t data[DGRAM_BUF];
 } g_q[Q_MAX];
 static int g_q_count;
-static pthread_mutex_t g_q_mutex = PTHREAD_MUTEX_INITIALIZER;
 static uint8_t g_dgram_index_seq;
 
 static void w16_le_buf(uint8_t *p, uint16_t v)
@@ -266,23 +255,16 @@ static ssize_t send_ec_payload(const uint8_t *ec_payload, size_t ec_len)
     if (flen < 0) {
         return -1;
     }
-    ssize_t s = send(g_sockfd, frame, (size_t)flen, 0);
-    return s;
+    return ul_ecat_transport_send(g_sockfd, frame, (size_t)flen, 0);
 }
 
 static int recv_eth_frame(uint8_t *buf, size_t cap, int timeout_ms)
 {
-    struct timeval tv;
-    tv.tv_sec = timeout_ms / 1000;
-    tv.tv_usec = (timeout_ms % 1000) * 1000;
-    fd_set rfds;
-    FD_ZERO(&rfds);
-    FD_SET(g_sockfd, &rfds);
-    int r = select(g_sockfd + 1, &rfds, NULL, NULL, &tv);
-    if (r <= 0) {
+    int w = ul_ecat_transport_wait_readable(g_sockfd, timeout_ms);
+    if (w <= 0) {
         return -1;
     }
-    ssize_t n = recv(g_sockfd, buf, cap, 0);
+    ssize_t n = ul_ecat_transport_recv(g_sockfd, buf, cap, 0);
     return (int)n;
 }
 
@@ -290,30 +272,30 @@ static int exchange_ec_payload(const uint8_t *ec_payload, size_t ec_len,
                                uint8_t *resp_ec, size_t *resp_ec_len, size_t resp_cap,
                                int timeout_ms)
 {
-    pthread_mutex_lock(&g_trx_mutex);
+    ul_ecat_osal_trx_lock();
     if (send_ec_payload(ec_payload, ec_len) < 0) {
-        pthread_mutex_unlock(&g_trx_mutex);
+        ul_ecat_osal_trx_unlock();
         return -1;
     }
     uint8_t rx[1600];
     int n = recv_eth_frame(rx, sizeof(rx), timeout_ms);
     if (n < 0) {
-        pthread_mutex_unlock(&g_trx_mutex);
+        ul_ecat_osal_trx_unlock();
         return -1;
     }
     const uint8_t *pdu = NULL;
     size_t pdu_len = 0;
     if (ul_ecat_parse_eth_frame(rx, (size_t)n, &pdu, &pdu_len) != 0) {
-        pthread_mutex_unlock(&g_trx_mutex);
+        ul_ecat_osal_trx_unlock();
         return -1;
     }
     if (pdu_len > resp_cap) {
-        pthread_mutex_unlock(&g_trx_mutex);
+        ul_ecat_osal_trx_unlock();
         return -1;
     }
     memcpy(resp_ec, pdu, pdu_len);
     *resp_ec_len = pdu_len;
-    pthread_mutex_unlock(&g_trx_mutex);
+    ul_ecat_osal_trx_unlock();
     return 0;
 }
 
@@ -380,7 +362,7 @@ int ul_ecat_poll_slave_state(int slave_index, ul_ecat_slave_state_t desired_stat
         uint16_t alst = 0;
         if (read_al_status_blocking(sl->station_address, &alst, 200) != 0) {
             elapsed += step_ms;
-            usleep(step_ms * 1000);
+            ul_ecat_osal_sleep_us((unsigned)(step_ms * 1000));
             continue;
         }
         if (ul_ecat_al_status_error_indicated(alst)) {
@@ -393,7 +375,7 @@ int ul_ecat_poll_slave_state(int slave_index, ul_ecat_slave_state_t desired_stat
             return 0;
         }
         elapsed += step_ms;
-        usleep(step_ms * 1000);
+        ul_ecat_osal_sleep_us((unsigned)(step_ms * 1000));
     }
     return -1;
 }
@@ -568,9 +550,7 @@ static void dc_cycle(void)
 
 static void handle_dc_response(uint64_t slave_time_ns)
 {
-    struct timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    uint64_t master = (uint64_t)now.tv_sec * 1000000000ULL + (uint64_t)now.tv_nsec;
+    uint64_t master = ul_ecat_osal_monotonic_ns();
     int64_t off = (int64_t)slave_time_ns - (int64_t)master;
     g_dc_offset = off;
     g_dc_timeout = 0;
@@ -598,20 +578,20 @@ static void handle_dc_response(uint64_t slave_time_ns)
 
 static int q_push_encoded(const uint8_t *wire, uint16_t wire_len)
 {
-    pthread_mutex_lock(&g_q_mutex);
+    ul_ecat_osal_q_lock();
     if (g_q_count >= Q_MAX) {
-        pthread_mutex_unlock(&g_q_mutex);
+        ul_ecat_osal_q_unlock();
         fprintf(stderr, "Datagram queue full.\n");
         return -1;
     }
     if (wire_len > DGRAM_BUF) {
-        pthread_mutex_unlock(&g_q_mutex);
+        ul_ecat_osal_q_unlock();
         return -1;
     }
     memcpy(g_q[g_q_count].data, wire, wire_len);
     g_q[g_q_count].wire_len = wire_len;
     g_q_count++;
-    pthread_mutex_unlock(&g_q_mutex);
+    ul_ecat_osal_q_unlock();
     return 0;
 }
 
@@ -671,11 +651,11 @@ static void process_rx_datagrams(const uint8_t *pdu, size_t pdu_len)
 
 void ul_ecat_send_batched_frames(void)
 {
-    pthread_mutex_lock(&g_trx_mutex);
-    pthread_mutex_lock(&g_q_mutex);
+    ul_ecat_osal_trx_lock();
+    ul_ecat_osal_q_lock();
     if (g_sockfd < 0) {
-        pthread_mutex_unlock(&g_q_mutex);
-        pthread_mutex_unlock(&g_trx_mutex);
+        ul_ecat_osal_q_unlock();
+        ul_ecat_osal_trx_unlock();
         return;
     }
     size_t off = 0;
@@ -696,34 +676,30 @@ void ul_ecat_send_batched_frames(void)
         if (flen < 0) {
             break;
         }
-        if (send(g_sockfd, frame, (size_t)flen, 0) < 0) {
+        if (ul_ecat_transport_send(g_sockfd, frame, (size_t)flen, 0) < 0) {
             perror("send EtherCAT frame");
         }
     }
     g_q_count = 0;
-    pthread_mutex_unlock(&g_q_mutex);
-    pthread_mutex_unlock(&g_trx_mutex);
+    ul_ecat_osal_q_unlock();
+    ul_ecat_osal_trx_unlock();
 }
 
 void ul_ecat_receive_frames_nonblock(void)
 {
-    pthread_mutex_lock(&g_trx_mutex);
+    ul_ecat_osal_trx_lock();
     if (g_sockfd < 0) {
-        pthread_mutex_unlock(&g_trx_mutex);
+        ul_ecat_osal_trx_unlock();
         return;
     }
-    fd_set rfds;
-    FD_ZERO(&rfds);
-    FD_SET(g_sockfd, &rfds);
-    struct timeval tv = {0, 0};
-    int ret = select(g_sockfd + 1, &rfds, NULL, NULL, &tv);
+    int ret = ul_ecat_transport_wait_readable(g_sockfd, 0);
     if (ret <= 0) {
-        pthread_mutex_unlock(&g_trx_mutex);
+        ul_ecat_osal_trx_unlock();
         return;
     }
     while (1) {
         uint8_t rx[1600];
-        ssize_t r = recv(g_sockfd, rx, sizeof(rx), MSG_DONTWAIT);
+        ssize_t r = ul_ecat_transport_recv(g_sockfd, rx, sizeof(rx), MSG_DONTWAIT);
         if (r < 0) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
                 perror("recv");
@@ -749,59 +725,10 @@ void ul_ecat_receive_frames_nonblock(void)
             }
         }
     }
-    pthread_mutex_unlock(&g_trx_mutex);
+    ul_ecat_osal_trx_unlock();
 }
 
 /* --- RT / lifecycle --- */
-
-static void try_init_realtime(int prio)
-{
-    if (prio <= 0) {
-        fprintf(stderr, "ul_ecat: RT priority 0 — not requesting SCHED_FIFO.\n");
-        return;
-    }
-    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
-        fprintf(stderr, "ul_ecat: warning: mlockall failed (%s); continuing without locked memory.\n",
-                strerror(errno));
-    }
-    struct sched_param sp;
-    memset(&sp, 0, sizeof(sp));
-    sp.sched_priority = prio;
-    if (pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) != 0) {
-        fprintf(stderr,
-                "ul_ecat: warning: pthread_setschedparam(SCHED_FIFO) failed (%s). "
-                "Need CAP_SYS_NICE or rtprio ulimits, or PREEMPT_RT kernel for hard RT.\n",
-                strerror(errno));
-    }
-}
-
-static int create_raw_socket(const char *ifn)
-{
-    int s = socket(AF_PACKET, SOCK_RAW, htons(UL_ECAT_ETHERTYPE));
-    if (s < 0) {
-        perror("socket");
-        return -1;
-    }
-    struct ifreq ifr;
-    memset(&ifr, 0, sizeof(ifr));
-    strncpy(ifr.ifr_name, ifn, IFNAMSIZ - 1);
-    if (ioctl(s, SIOCGIFINDEX, &ifr) < 0) {
-        perror("ioctl SIOCGIFINDEX");
-        close(s);
-        return -1;
-    }
-    struct sockaddr_ll sll;
-    memset(&sll, 0, sizeof(sll));
-    sll.sll_family = AF_PACKET;
-    sll.sll_ifindex = ifr.ifr_ifindex;
-    sll.sll_protocol = htons(UL_ECAT_ETHERTYPE);
-    if (bind(s, (struct sockaddr *)&sll, sizeof(sll)) < 0) {
-        perror("bind");
-        close(s);
-        return -1;
-    }
-    return s;
-}
 
 static void *periodic_thread_func(void *arg)
 {
@@ -809,18 +736,12 @@ static void *periodic_thread_func(void *arg)
     if (g_dc_state == 1) {
         dc_init();
     }
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
+    uint64_t next_wake = ul_ecat_osal_monotonic_ns();
     while (g_running) {
         dc_cycle();
         ul_ecat_send_batched_frames();
         ul_ecat_receive_frames_nonblock();
-        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL);
-        ts.tv_nsec += CYCLE_TIME_NS;
-        if (ts.tv_nsec >= 1000000000L) {
-            ts.tv_nsec -= 1000000000L;
-            ts.tv_sec++;
-        }
+        ul_ecat_osal_sleep_until_ns(&next_wake, CYCLE_TIME_NS);
     }
     printf("periodic_thread_func: exit.\n");
     return NULL;
@@ -832,13 +753,14 @@ int ul_ecat_master_init(const ul_ecat_master_settings_t *cfg)
         fprintf(stderr, "No config.\n");
         return -1;
     }
-    int s = create_raw_socket(cfg->iface_name);
+    ul_ecat_osal_init();
+    int s = ul_ecat_transport_open(cfg->iface_name);
     if (s < 0) {
         return -1;
     }
     g_sockfd = s;
 
-    try_init_realtime(cfg->rt_priority);
+    ul_ecat_osal_realtime_hint(cfg->rt_priority);
 
     memcpy(g_dst_mac, cfg->dst_mac, 6);
     memcpy(g_src_mac, cfg->src_mac, 6);
@@ -851,34 +773,10 @@ int ul_ecat_master_init(const ul_ecat_master_settings_t *cfg)
     g_running = 1;
     g_dgram_index_seq = 0;
 
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
-    if (cfg->rt_priority > 0) {
-        struct sched_param sp;
-        memset(&sp, 0, sizeof(sp));
-        sp.sched_priority = cfg->rt_priority;
-        if (pthread_attr_setschedpolicy(&attr, SCHED_FIFO) != 0) {
-            fprintf(stderr, "ul_ecat: warning: pthread_attr_setschedpolicy failed.\n");
-        }
-        if (pthread_attr_setschedparam(&attr, &sp) != 0) {
-            fprintf(stderr, "ul_ecat: warning: pthread_attr_setschedparam failed.\n");
-        }
-    }
-
-    int rc = pthread_create(&g_thread_id, &attr, periodic_thread_func, NULL);
-    pthread_attr_destroy(&attr);
-    if (rc != 0) {
-        fprintf(stderr,
-                "ul_ecat: warning: pthread_create with SCHED_FIFO failed (%s); retrying without RT attrs.\n",
-                strerror(rc));
-        rc = pthread_create(&g_thread_id, NULL, periodic_thread_func, NULL);
-        if (rc != 0) {
-            fprintf(stderr, "pthread_create: %s\n", strerror(rc));
-            close(g_sockfd);
-            g_sockfd = -1;
-            return -1;
-        }
+    if (ul_ecat_osal_worker_start(periodic_thread_func, NULL, cfg->rt_priority) != 0) {
+        ul_ecat_transport_close(g_sockfd);
+        g_sockfd = -1;
+        return -1;
     }
     return 0;
 }
@@ -890,9 +788,10 @@ int ul_ecat_master_shutdown(void)
         return -1;
     }
     g_running = 0;
-    pthread_join(g_thread_id, NULL);
-    close(g_sockfd);
+    ul_ecat_osal_worker_join();
+    ul_ecat_transport_close(g_sockfd);
     g_sockfd = -1;
+    ul_ecat_osal_shutdown();
     printf("Master shutdown.\n");
     return 0;
 }
@@ -918,37 +817,35 @@ typedef struct {
 #define MAX_EVENTS 64
 static ecat_event_t g_evt_queue[MAX_EVENTS];
 static int g_evt_count = 0;
-static pthread_mutex_t g_evt_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t g_evt_cond = PTHREAD_COND_INITIALIZER;
 static volatile int g_evt_stop = 0;
 static ul_ecat_dc_callback_t g_cb_dc = NULL;
 static ul_ecat_frame_callback_t g_cb_fr = NULL;
 
 void ul_ecat_register_dc_callback(ul_ecat_dc_callback_t cb)
 {
-    pthread_mutex_lock(&g_evt_lock);
+    ul_ecat_osal_evt_lock();
     g_cb_dc = cb;
-    pthread_mutex_unlock(&g_evt_lock);
+    ul_ecat_osal_evt_unlock();
 }
 
 void ul_ecat_register_frame_callback(ul_ecat_frame_callback_t cb)
 {
-    pthread_mutex_lock(&g_evt_lock);
+    ul_ecat_osal_evt_lock();
     g_cb_fr = cb;
-    pthread_mutex_unlock(&g_evt_lock);
+    ul_ecat_osal_evt_unlock();
 }
 
 static void post_evt(const ecat_event_t *evt)
 {
-    pthread_mutex_lock(&g_evt_lock);
+    ul_ecat_osal_evt_lock();
     if (g_evt_count < MAX_EVENTS) {
         g_evt_queue[g_evt_count] = *evt;
         g_evt_count++;
-        pthread_cond_signal(&g_evt_cond);
+        ul_ecat_osal_evt_signal();
     } else {
         fprintf(stderr, "Event queue full.\n");
     }
-    pthread_mutex_unlock(&g_evt_lock);
+    ul_ecat_osal_evt_unlock();
 }
 
 void ul_ecat_eventloop_post_dc_event(const ul_ecat_dc_event_info_t *dcinfo)
@@ -970,16 +867,16 @@ void ul_ecat_eventloop_post_frame_event(const struct ul_ecat_frame *fr, ssize_t 
 
 void ul_ecat_eventloop_run(void)
 {
-    pthread_mutex_lock(&g_evt_lock);
+    ul_ecat_osal_evt_lock();
     g_evt_stop = 0;
-    pthread_mutex_unlock(&g_evt_lock);
+    ul_ecat_osal_evt_unlock();
     for (;;) {
-        pthread_mutex_lock(&g_evt_lock);
+        ul_ecat_osal_evt_lock();
         while (g_evt_count == 0 && !g_evt_stop) {
-            pthread_cond_wait(&g_evt_cond, &g_evt_lock);
+            ul_ecat_osal_evt_wait();
         }
         if (g_evt_stop) {
-            pthread_mutex_unlock(&g_evt_lock);
+            ul_ecat_osal_evt_unlock();
             break;
         }
         ecat_event_t e = g_evt_queue[0];
@@ -987,7 +884,7 @@ void ul_ecat_eventloop_run(void)
             g_evt_queue[i - 1] = g_evt_queue[i];
         }
         g_evt_count--;
-        pthread_mutex_unlock(&g_evt_lock);
+        ul_ecat_osal_evt_unlock();
         if (e.type == EV_DC && g_cb_dc) {
             g_cb_dc(&e.dc);
         } else if (e.type == EV_FRAME && g_cb_fr) {
@@ -998,10 +895,10 @@ void ul_ecat_eventloop_run(void)
 
 void ul_ecat_eventloop_stop(void)
 {
-    pthread_mutex_lock(&g_evt_lock);
+    ul_ecat_osal_evt_lock();
     g_evt_stop = 1;
-    pthread_cond_signal(&g_evt_cond);
-    pthread_mutex_unlock(&g_evt_lock);
+    ul_ecat_osal_evt_signal();
+    ul_ecat_osal_evt_unlock();
 }
 
 /* --- CLI --- */

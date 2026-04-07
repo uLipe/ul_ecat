@@ -1,5 +1,7 @@
 # Porting guide
 
+For how layers and platform glue fit together, see [`architecture.md`](architecture.md).
+
 ## Linux (primary)
 
 - Use `CAP_NET_RAW` or root for raw sockets.
@@ -8,11 +10,13 @@
 
 ## Other operating systems
 
-This tree implements only **Linux** `linux/if_packet.h`. To port:
+The master core uses [`ul_ecat_osal.h`](../include/ul_ecat_osal.h) and [`ul_ecat_transport.h`](../include/ul_ecat_transport.h). Implementations in this repo:
 
-1. Replace `create_raw_socket()` and `bind()` with the OS-specific raw L2 API (e.g. BPF on BSD, WinPcap/Npcap on Windows — not included).
-2. Keep `ul_ecat_frame.c` unchanged if the wire format stays identical.
-3. Revisit mutex + threading model if your RTOS uses different primitives.
+- **Linux:** `src/osal/osal_linux.c`, `src/transport/transport_linux.c`
+- **Zephyr:** [`doc/zephyr-module.md`](zephyr-module.md)
+- **NuttX:** [`doc/nuttx-module.md`](nuttx-module.md)
+
+For a new OS, add `osal_*.c` + `transport_*.c` and wire them in your build system. For BSD/Windows, replace the transport with BPF / Npcap (not included); keep `ul_ecat_frame.c` unchanged if the wire format stays identical.
 
 ## Embedded CMake consumption
 

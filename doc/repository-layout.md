@@ -9,10 +9,33 @@ ul_ecat/
     ul_ecat_master.h      # Public C API (master lifecycle, queue, scan, CLI)
     ul_ecat_frame.h       # Frame/datagram encode/decode (tests + internal)
     ul_ecat_al.h          # AL Control / Status bit helpers
+    ul_ecat_osal.h        # OS abstraction (mutex, worker, time) — Linux / Zephyr / NuttX impl.
+    ul_ecat_transport.h   # Raw L2 transport — per-OS implementation
   src/
     ul_ecat_al.c
     ul_ecat_frame.c       # Encode/decode
-    ul_ecat_master.c      # Master implementation
+    ul_ecat_master.c      # Master core (calls OSAL + transport only)
+    osal/
+      osal_linux.c        # Host / embedded Linux
+      osal_zephyr.c
+      osal_nuttx.c
+    transport/
+      transport_linux.c
+      transport_zephyr.c
+      transport_zephyr_netdev.c   # Optional Zephyr TX via net_if
+      transport_nuttx.c
+  zephyr/
+    module.yml            # Zephyr module metadata
+    Kconfig
+    CMakeLists.txt
+  nuttx/
+    Kconfig               # CONFIG_UL_ECAT* (included from nuttx-apps)
+    Make.defs             # UL_ECAT_LIB_SRCS fragment
+    ul_ecat_sources.cmake
+    CMakeLists.txt
+  samples/
+    zephyr/ul_ecat_scan/  # west build + CONFIG_UL_ECAT*
+    nuttx/ul_ecat_scan/   # NuttX apps Makefile + Kconfig
   tools/
     ul_ecat_tool.c        # Optional thin main() → ul_ecat_app_execute
   scripts/
@@ -32,9 +55,11 @@ ul_ecat/
   requirements.txt      # pytest (optional pytest-timeout for integration)
 ```
 
+**Embedded quick start:** [README.md § Quick start](../README.md#quick-start-zephyr-and-nuttx), then [zephyr-module.md](zephyr-module.md) or [nuttx-module.md](nuttx-module.md).
+
 Build outputs (default `build/`):
 
-- `libul_ecat.a`, `libul_ecat.so` (if shared enabled)
+- `libul_ecat.a`, `libul_ecat.so` (if shared enabled) — **Linux** OSAL/transport only
 - `tests/ul_ecat_tests`
 - `ecatTool` (if `UL_ECAT_BUILD_TOOLS=ON`)
 - `coverage_html/` (if `cmake --build build --target ul_ecat_coverage` after configuring with coverage + lcov/genhtml)

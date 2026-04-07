@@ -17,8 +17,40 @@ EtherCAT® is a registered trademark. This project is not affiliated with EtherC
 - **CMake** install + `ul_ecatConfig.cmake` for embedding in other projects
 - **GoogleTest** unit tests and **pytest** smoke tests for the Python CLI
 - **Python** `scripts/ul_ecat_tool.py` (ctypes) and optional `scripts/ecat_slave_sim.py` for L2 experiments
+- **Zephyr** module (Kconfig + CMake): [`doc/zephyr-module.md`](doc/zephyr-module.md) — sample [`samples/zephyr/ul_ecat_scan`](samples/zephyr/ul_ecat_scan) runs `ul_ecat_scan_network` with `ZEPHYR_EXTRA_MODULES` pointing at this repo
+- **NuttX** (Kconfig + Make/CMake helpers): [`doc/nuttx-module.md`](doc/nuttx-module.md) — sample [`samples/nuttx/ul_ecat_scan`](samples/nuttx/ul_ecat_scan), sources under [`nuttx/`](nuttx/)
 
 SoE/FoE are **out of scope** for this MVP.
+
+## Quick start: Zephyr and NuttX
+
+Use this repository as an **out-of-tree** module: the portable master ([`src/ul_ecat_master.c`](src/ul_ecat_master.c)) links against an **OSAL** and **transport** implementation for each RTOS. Full details: [`doc/zephyr-module.md`](doc/zephyr-module.md), [`doc/nuttx-module.md`](doc/nuttx-module.md).
+
+### Zephyr
+
+**Prerequisites:** Zephyr SDK, `west`, a board defconfig with Ethernet and packet sockets (see the sample `prj.conf`).
+
+1. Point `ZEPHYR_EXTRA_MODULES` at the **clone root** of this repo (the folder that contains [`zephyr/module.yml`](zephyr/module.yml)).
+2. Build the scan sample (example: `native_sim` with host Ethernet):
+
+   ```bash
+   export ZEPHYR_EXTRA_MODULES=/path/to/ul_ecat
+   west build -b native_sim/native/64 -p always /path/to/ul_ecat/samples/zephyr/ul_ecat_scan
+   west build -t run
+   ```
+
+3. In [`samples/zephyr/ul_ecat_scan/src/main.c`](samples/zephyr/ul_ecat_scan/src/main.c), set the interface name (`UL_ECAT_SAMPLE_IFACE_NAME`, default `eth0`) to match your `net_if`. Enable `CONFIG_UL_ECAT=y` and `CONFIG_UL_ECAT_MASTER=y` (see sample `prj.conf`).
+
+Optional: `CONFIG_UL_ECAT_TRANSPORT_NETDEV=y` for TX via `net_if` instead of `zsock_send` (see Zephyr doc).
+
+### NuttX
+
+**Prerequisites:** NuttX + `nuttx-apps`, a board with `CONFIG_NET`, `CONFIG_NET_PKT`, and an Ethernet driver.
+
+1. **Kconfig:** In `apps/Kconfig`, source [`nuttx/Kconfig`](nuttx/Kconfig) and [`samples/nuttx/ul_ecat_scan/Kconfig`](samples/nuttx/ul_ecat_scan/Kconfig) (absolute paths to your clone).
+2. **App:** Copy or symlink [`samples/nuttx/ul_ecat_scan`](samples/nuttx/ul_ecat_scan) under `apps/examples/` (or keep it in-tree and set paths). Enable `CONFIG_UL_ECAT`, `CONFIG_UL_ECAT_MASTER`, and `CONFIG_EXAMPLES_UL_ECAT_SCAN` in `menuconfig`. Merge options from [`samples/nuttx/ul_ecat_scan/defconfig.snippet`](samples/nuttx/ul_ecat_scan/defconfig.snippet) as needed.
+3. **Build:** From the NuttX tree, `./tools/configure.sh <board>:<config>` then `make -j`. Set **`UL_ECAT_ROOT`** in the app `Makefile` if the sample is not under the `ul_ecat` repo (see [`doc/nuttx-module.md`](doc/nuttx-module.md)).
+4. **Run:** `nsh> ul_ecat_scan [eth0]` — optional argument is the interface name.
 
 ## CI
 
@@ -138,10 +170,11 @@ sudo python3 scripts/ecat_slave_sim.py veth1
 
 See the `doc/` directory:
 
-- `doc/architecture.md` — layers and data flow
+- **Embedded quick reference:** [`doc/zephyr-module.md`](doc/zephyr-module.md), [`doc/nuttx-module.md`](doc/nuttx-module.md) (and the [Quick start](#quick-start-zephyr-and-nuttx) above)
+- `doc/architecture.md` — **layers, OSAL/transport separation, diagrams, threading** (start here for structure)
 - `doc/mental-model.md` — ADP/ADO, WKC, AL states
 - `doc/repository-layout.md` — repository map
-- `doc/porting-guide.md` — non-Linux / embedded notes
+- `doc/porting-guide.md` — OSAL/transport ports (Linux, Zephyr, NuttX, others)
 
 ## License
 
@@ -149,6 +182,6 @@ This project is licensed under the **MIT License** — see [LICENSE](LICENSE). C
 
 ## Limitations
 
-- Linux-only transport (other OSes need a different raw socket layer).
+- **Linux** builds use AF_PACKET only; **Zephyr** and **NuttX** use their own OSAL/transport (see `doc/`). Other OSes still need a custom transport.
 - No full PDO configuration, CoE mailbox, or certified conformance.
 - DC path is minimal and assumes a single slave context for demo reads.

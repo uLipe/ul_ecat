@@ -1,0 +1,18 @@
+# Copyright (c) ul_ecat contributors
+# SPDX-License-Identifier: MIT
+#
+# NuttX Makefile fragment: set UL_ECAT_ROOT to this repository root, then:
+#   include $(UL_ECAT_ROOT)/nuttx/Make.defs
+# and add $(UL_ECAT_LIB_SRCS) to CSRCS in your application Makefile.
+
+ifndef UL_ECAT_ROOT
+$(error UL_ECAT_ROOT must point to the ul_ecat repository root)
+endif
+
+UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/src/ul_ecat_frame.c
+UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/src/ul_ecat_al.c
+UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/src/ul_ecat_master.c
+UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/src/osal/osal_nuttx.c
+UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/src/transport/transport_nuttx.c
+
+UL_ECAT_INCDIR = $(UL_ECAT_ROOT)/include

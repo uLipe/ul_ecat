@@ -1,0 +1,13 @@
+# Copyright (c) ul_ecat contributors
+# SPDX-License-Identifier: MIT
+#
+# Add to nuttx-apps Kconfig (e.g. apps/Kconfig) before this line:
+#   source "/absolute/path/to/ul_ecat/nuttx/Kconfig"
+
+config EXAMPLES_UL_ECAT_SCAN
+	bool "ul_ecat EtherCAT bus scan example"
+	default n
+	depends on UL_ECAT_MASTER
+	---help---
+	  Scans the EtherCAT network and prints discovered slaves to stdout.
+	  Set UL_ECAT_ROOT in the application Makefile to the ul_ecat repository path.
