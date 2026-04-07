@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/uLipe/ul_ecat/actions/workflows/ci.yml/badge.svg)](https://github.com/uLipe/ul_ecat/actions/workflows/ci.yml)
 
-Minimal **EtherCAT master** library for **Linux** using **AF_PACKET** raw sockets only (no kernel IgH stack). The wire format follows the public EtherCAT frame/datagram description (length field, 10-byte datagram header, data, working counter). This is an educational / bring-up stack, not a certified commercial EtherCAT master.
+Minimal **EtherCAT master** and optional **slave** libraries for **Linux** host builds. The master uses **AF_PACKET** raw sockets only (no kernel IgH stack). The wire format follows the public EtherCAT frame/datagram description (length field, 10-byte datagram header, data, working counter). This is an educational / bring-up stack, not a certified commercial EtherCAT stack.
 
 EtherCAT® is a registered trademark. This project is not affiliated with EtherCAT Technology Group.
 
@@ -16,7 +16,9 @@ EtherCAT® is a registered trademark. This project is not affiliated with EtherC
 - **POSIX** periodic thread with **SCHED_FIFO** / `mlockall` — on failure, **warnings** and fallback (non-fatal)
 - **CMake** install + `ul_ecatConfig.cmake` for embedding in other projects
 - **GoogleTest** unit tests and **pytest** smoke tests for the Python CLI
-- **Python** `scripts/ul_ecat_tool.py` (ctypes) and optional `scripts/ecat_slave_sim.py` for L2 experiments
+- **`libul_ecat_slave`** — ESC register mirror + PDU replies (**FPRD / FPWR / APWR**); shared **`ul_ecat_wire`** (`src/common/`) with the master
+- **Host test link**: `tools/ul_ecat_slave_harness` (TCP) + `scripts/ethercat_controller_sim.py` (stateful scan, not a mock)
+- **Python** `scripts/ul_ecat_tool.py` (ctypes master CLI + `slave-emulator` mode) and optional `scripts/ecat_slave_sim.py` for raw L2 experiments
 - **Zephyr** module (Kconfig + CMake): [`doc/zephyr-module.md`](doc/zephyr-module.md) — sample [`samples/zephyr/ul_ecat_scan`](samples/zephyr/ul_ecat_scan) runs `ul_ecat_scan_network` with `ZEPHYR_EXTRA_MODULES` pointing at this repo
 - **NuttX** (Kconfig + Make/CMake helpers): [`doc/nuttx-module.md`](doc/nuttx-module.md) — sample [`samples/nuttx/ul_ecat_scan`](samples/nuttx/ul_ecat_scan), sources under [`nuttx/`](nuttx/)
 
@@ -24,7 +26,7 @@ SoE/FoE are **out of scope** for this MVP.
 
 ## Quick start: Zephyr and NuttX
 
-Use this repository as an **out-of-tree** module: the portable master ([`src/ul_ecat_master.c`](src/ul_ecat_master.c)) links against an **OSAL** and **transport** implementation for each RTOS. Full details: [`doc/zephyr-module.md`](doc/zephyr-module.md), [`doc/nuttx-module.md`](doc/nuttx-module.md).
+Use this repository as an **out-of-tree** module: the portable master ([`src/master/ul_ecat_master.c`](src/master/ul_ecat_master.c)) links against an **OSAL** and **transport** implementation for each RTOS. Full details: [`doc/zephyr-module.md`](doc/zephyr-module.md), [`doc/nuttx-module.md`](doc/nuttx-module.md).
 
 ### Zephyr
 
@@ -54,7 +56,7 @@ Optional: `CONFIG_UL_ECAT_TRANSPORT_NETDEV=y` for TX via `net_if` instead of `zs
 
 ## CI
 
-GitHub Actions runs **configure → build → ctest** on pushes and pull requests to `master` / `main` (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+GitHub Actions runs **configure → build → ctest** on pushes and pull requests to `master` / `main` (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)), then an **E2E** step: **`scripts/run_e2e_l2_scan.py`** with `sudo` (veth + raw sockets + verbose master scan).
 
 ## Requirements
 
@@ -75,17 +77,22 @@ cmake --build build -j
 
 Artifacts:
 
-- `build/libul_ecat.a` — static library (default for embedded)
-- `build/libul_ecat.so` — shared library (when `UL_ECAT_BUILD_SHARED=ON`, for Python ctypes)
+- `build/libul_ecat.a` — static **master** library (default for embedded)
+- `build/libul_ecat.so` — shared master library (when `UL_ECAT_BUILD_SHARED=ON`, for Python ctypes)
+- `build/libul_ecat_slave.a` — static **slave** library (when `UL_ECAT_BUILD_SLAVE=ON`)
+- `build/libul_ecat_wire.a` — shared **frame + AL** helpers (linked by master and slave)
+- `build/ul_ecat_slave_harness` — TCP loopback server for tests (when slave is built)
 
 ### Options
 
 | Option | Default | Meaning |
 |--------|---------|---------|
+| `UL_ECAT_BUILD_MASTER` | ON | Build `libul_ecat` (master) |
+| `UL_ECAT_BUILD_SLAVE` | ON | Build `libul_ecat_slave` + `ul_ecat_slave_harness` |
 | `UL_ECAT_BUILD_TESTS` | ON | GoogleTest + pytest (if `pytest` found) |
 | `UL_ECAT_BUILD_SHARED` | ON | Build `libul_ecat.so` |
 | `UL_ECAT_BUILD_TOOLS` | OFF | Legacy C `ecatTool` executable |
-| `UL_ECAT_ENABLE_COVERAGE` | OFF | Add `--coverage` (gcov/lcov) |
+| `UL_ECAT_ENABLE_COVERAGE` | OFF | Add `--coverage` (gcov/lcov) for all compiled targets in the build |
 
 ## Install
 
@@ -98,6 +105,8 @@ Consuming from CMake:
 ```cmake
 find_package(ul_ecat REQUIRED)
 target_link_libraries(my_app PRIVATE ul_ecat::ul_ecat)
+# Optional slave:
+# target_link_libraries(my_slave PRIVATE ul_ecat::slave)
 ```
 
 ## Tests
@@ -106,7 +115,9 @@ target_link_libraries(my_app PRIVATE ul_ecat::ul_ecat)
 cd build && ctest --output-on-failure
 ```
 
-`ctest` runs **GoogleTest** and **pytest** on `tests/`, but **skips** [`tests/test_integration_sim.py`](tests/test_integration_sim.py) (veth + raw socket + root; can block or hang if run unintentionally).
+`ctest` runs **GoogleTest** and **pytest** on `tests/`, but **skips** [`tests/test_integration_sim.py`](tests/test_integration_sim.py) (duplicate of the L2 E2E scenario; kept for manual `pytest`).
+
+The **L2 master+slave E2E** with logs is **`scripts/run_e2e_l2_scan.py`** — run locally with `sudo`, and in **CI** as a dedicated workflow step after `ctest`.
 
 **Integration test** (manual, as root):
 
@@ -125,7 +136,7 @@ python3 -m pytest tests/ -v --ignore=tests/test_integration_sim.py
 
 Coverage (gcov + lcov):
 
-Install `lcov` and `genhtml`, then configure with `UL_ECAT_ENABLE_COVERAGE=ON` so the library and tests are built with `--coverage`.
+Install `lcov` and `genhtml`, then configure with `UL_ECAT_ENABLE_COVERAGE=ON` so libraries, tests, and the slave harness are built with `--coverage` where applicable.
 
 ```bash
 cmake -S . -B build -DUL_ECAT_ENABLE_COVERAGE=ON -DUL_ECAT_BUILD_TESTS=ON
@@ -145,13 +156,43 @@ Manual `lcov`/`genhtml` from `build/` works the same as documented in the covera
 
 ## Python CLI
 
+**Master** (ctypes; same arguments as the C `ul_ecat_app_execute` / legacy `ecatTool`):
+
 ```bash
 export UL_ECAT_LIB=$PWD/build/libul_ecat.so   # if not found automatically
 python3 scripts/ul_ecat_tool.py eth0 scan
 python3 scripts/ul_ecat_tool.py eth0 read 0x1000 0x0130 2
 ```
 
-Same arguments as the C `ul_ecat_app_execute` / legacy `ecatTool`.
+**Slave emulator** (loopback TCP harness + controller simulator; no raw sockets):
+
+```bash
+python3 scripts/ul_ecat_tool.py slave-emulator -p 9234
+```
+
+Optional: `UL_ECAT_SLAVE_HARNESS=/path/to/ul_ecat_slave_harness`. See [`doc/simulator.md`](doc/simulator.md).
+
+## E2E: real master + simulated slave on L2 (veth)
+
+The TCP harness (`ul_ecat_slave_harness`) only tests **`libul_ecat_slave`** with a Python controller. To run the **C master** (`libul_ecat.so`) against a **simulated slave** on the same machine, use a **veth** pair and `scripts/ecat_slave_sim.py` (requires **root**).
+
+Verbose scan trace from the master:
+
+```bash
+sudo env UL_ECAT_VERBOSE=1 UL_ECAT_LIB=$PWD/build/libul_ecat.so \
+  python3 scripts/run_e2e_l2_scan.py
+```
+
+This prints **`[ul_ecat] scan`** lines (APWR/FPRD) and **`[ecat_slave_sim]`** datagram logs. See [`doc/simulator.md`](doc/simulator.md).
+
+## Slave identity tables (generator)
+
+```bash
+python3 scripts/gen_slave_data.py --vendor 0x2 --product 0x1C213052
+cmake --build build --target ul_ecat_regen_slave_tables   # if CMake found Python 3
+```
+
+Writes `generated/ul_ecat_slave_tables.{c,h}` (committed for reproducible CI).
 
 ## Slave simulator (optional)
 
@@ -172,7 +213,9 @@ See the `doc/` directory:
 
 - **Embedded quick reference:** [`doc/zephyr-module.md`](doc/zephyr-module.md), [`doc/nuttx-module.md`](doc/nuttx-module.md) (and the [Quick start](#quick-start-zephyr-and-nuttx) above)
 - `doc/architecture.md` — **layers, OSAL/transport separation, diagrams, threading** (start here for structure)
-- `doc/mental-model.md` — ADP/ADO, WKC, AL states
+- `doc/mental-model.md` — ADP/ADO, WKC, AL states (master-centric)
+- `doc/slave-architecture.md`, `doc/slave-mental-model.md` — **slave** stack
+- `doc/simulator.md` — TCP harness + **EtherCAT controller simulator** (`scripts/ethercat_controller_sim.py`)
 - `doc/repository-layout.md` — repository map
 - `doc/porting-guide.md` — OSAL/transport ports (Linux, Zephyr, NuttX, others)
 

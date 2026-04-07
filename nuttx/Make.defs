@@ -9,9 +9,9 @@ ifndef UL_ECAT_ROOT
 $(error UL_ECAT_ROOT must point to the ul_ecat repository root)
 endif
 
-UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/src/ul_ecat_frame.c
-UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/src/ul_ecat_al.c
-UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/src/ul_ecat_master.c
+UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/src/common/ul_ecat_frame.c
+UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/src/common/ul_ecat_al.c
+UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/src/master/ul_ecat_master.c
 UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/src/osal/osal_nuttx.c
 UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/src/transport/transport_nuttx.c
 

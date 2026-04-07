@@ -20,6 +20,9 @@
 #include <string.h>
 #include <unistd.h>
 
+/* Set UL_ECAT_VERBOSE=1 for per-datagram trace during ul_ecat_scan_network(). */
+static int g_scan_trace;
+
 #include <arpa/inet.h>
 
 #define CYCLE_TIME_NS 1000000UL
@@ -407,9 +410,19 @@ int ul_ecat_request_slave_state(int slave_index, ul_ecat_slave_state_t state)
 
 /* --- Network scan: APWR station address, then identity reads --- */
 
+static int scan_verbose_env(void)
+{
+    const char *v = getenv("UL_ECAT_VERBOSE");
+    return (v != NULL && v[0] != '\0' && strcmp(v, "0") != 0);
+}
+
 static int apwr_blocking(uint16_t adp_pos, uint16_t ado, const void *data, uint16_t len,
                          uint16_t *wkc_out, int timeout_ms)
 {
+    if (g_scan_trace) {
+        printf("[ul_ecat] scan TX: APWR adp=%u ado=0x%04X len=%u\n", (unsigned)adp_pos, (unsigned)ado,
+               (unsigned)len);
+    }
     uint8_t dg[512];
     int enc = ul_ecat_dgram_encode(dg, sizeof(dg), UL_ECAT_CMD_APWR, 0,
                                    adp_pos, ado, len, 0u, 0u, data);
@@ -419,11 +432,17 @@ static int apwr_blocking(uint16_t adp_pos, uint16_t ado, const void *data, uint1
     uint8_t resp[512];
     size_t rlen = 0;
     if (exchange_ec_payload(dg, (size_t)enc, resp, &rlen, sizeof(resp), timeout_ms) != 0) {
+        if (g_scan_trace) {
+            printf("[ul_ecat] scan RX: APWR exchange failed\n");
+        }
         return -1;
     }
     uint16_t wkc = 0;
     if (ul_ecat_dgram_parse(resp, rlen, 0, NULL, NULL, NULL, NULL, NULL, NULL, &wkc, NULL, 0) != 0) {
         return -1;
+    }
+    if (g_scan_trace) {
+        printf("[ul_ecat] scan RX: APWR WKC=%u\n", (unsigned)wkc);
     }
     if (wkc_out) {
         *wkc_out = wkc;
@@ -434,6 +453,10 @@ static int apwr_blocking(uint16_t adp_pos, uint16_t ado, const void *data, uint1
 static int fprd_blocking(uint16_t station, uint16_t ado, void *out, uint16_t len,
                          uint16_t *wkc_out, int timeout_ms)
 {
+    if (g_scan_trace) {
+        printf("[ul_ecat] scan TX: FPRD adp=0x%04X ado=0x%04X len=%u\n", (unsigned)station,
+               (unsigned)ado, (unsigned)len);
+    }
     uint8_t dg[512];
     int enc = ul_ecat_dgram_encode(dg, sizeof(dg), UL_ECAT_CMD_FPRD, 0,
                                    station, ado, len, 0u, 0u, NULL);
@@ -443,11 +466,17 @@ static int fprd_blocking(uint16_t station, uint16_t ado, void *out, uint16_t len
     uint8_t resp[512];
     size_t rlen = 0;
     if (exchange_ec_payload(dg, (size_t)enc, resp, &rlen, sizeof(resp), timeout_ms) != 0) {
+        if (g_scan_trace) {
+            printf("[ul_ecat] scan RX: FPRD ado=0x%04X exchange failed\n", (unsigned)ado);
+        }
         return -1;
     }
     uint16_t wkc = 0;
     if (ul_ecat_dgram_parse(resp, rlen, 0, NULL, NULL, NULL, NULL, NULL, NULL, &wkc, out, len) != 0) {
         return -1;
+    }
+    if (g_scan_trace) {
+        printf("[ul_ecat] scan RX: FPRD ado=0x%04X WKC=%u\n", (unsigned)ado, (unsigned)wkc);
     }
     if (wkc_out) {
         *wkc_out = wkc;
@@ -457,6 +486,11 @@ static int fprd_blocking(uint16_t station, uint16_t ado, void *out, uint16_t len
 
 int ul_ecat_scan_network(void)
 {
+    g_scan_trace = scan_verbose_env();
+    if (g_scan_trace) {
+        printf("[ul_ecat] scan: start (verbose trace enabled via UL_ECAT_VERBOSE)\n");
+    }
+
     memset(&g_slaves_db, 0, sizeof(g_slaves_db));
     g_slaves_db.slave_count = 0;
 
@@ -465,10 +499,16 @@ int ul_ecat_scan_network(void)
         uint8_t stadr[2];
         w16_le_buf(stadr, station);
         uint16_t wkc = 0;
+        if (g_scan_trace) {
+            printf("[ul_ecat] scan: logical position %d -> assign station 0x%04X\n", pos, (unsigned)station);
+        }
         if (apwr_blocking((uint16_t)pos, ESC_REG_STADR, stadr, 2u, &wkc, 200) != 0) {
             break;
         }
         if (wkc < 1u) {
+            if (g_scan_trace) {
+                printf("[ul_ecat] scan: no slave at position %d (WKC=0), end of ring\n", pos);
+            }
             break;
         }
         ul_ecat_slave_t *s = &g_slaves_db.slaves[g_slaves_db.slave_count];

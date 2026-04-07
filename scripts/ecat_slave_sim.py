@@ -8,7 +8,10 @@ Override identity with env: UL_ECAT_SIM_VENDOR_ID, UL_ECAT_SIM_PRODUCT_CODE, etc
 Requires root or CAP_NET_RAW. Typical: veth pair, bind to one end, run master on peer.
 
 Usage:
-  sudo ./ecat_slave_sim.py [iface]
+  sudo ./ecat_slave_sim.py [-v|--verbose] [iface]
+
+  -v   Log each processed datagram (WKC, ADP, ADO).
+
 Environment:
   UL_ECAT_SLAVE_IFACE - default interface if argv omitted
 """
@@ -75,7 +78,8 @@ def parse_datagrams(pdu: bytes) -> list[tuple[int, int, int, int, int, int, byte
 
 
 class ServoSim:
-    def __init__(self) -> None:
+    def __init__(self, verbose: bool = False) -> None:
+        self.verbose = verbose
         self.station_adr: int | None = None
         self.al_state = 1  # INIT
         self.vendor = _env_u32("UL_ECAT_SIM_VENDOR_ID", DEFAULT_VENDOR)
@@ -110,6 +114,16 @@ class ServoSim:
                     data[0:4] = u32_le(self.revision)
                 elif ado == 0x001E and dlen >= 4:
                     data[0:4] = u32_le(self.serial)
+
+        if self.verbose:
+            cname = {UL_ECAT_CMD_APWR: "APWR", UL_ECAT_CMD_FPWR: "FPWR", UL_ECAT_CMD_FPRD: "FPRD"}.get(
+                cmd, f"CMD{cmd:02X}"
+            )
+            print(
+                f"[ecat_slave_sim] {cname} adp=0x{adp:04X} ado=0x{ado:04X} dlen={dlen} -> WKC={wkc_out} "
+                f"(station={self.station_adr})",
+                flush=True,
+            )
 
         outdg = bytearray()
         outdg.append(cmd)
@@ -155,8 +169,13 @@ def build_reply(rx: bytes, sim: ServoSim) -> bytes | None:
 
 
 def main() -> int:
-    ifname = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("UL_ECAT_SLAVE_IFACE", "eth0")
-    sim = ServoSim()
+    args = sys.argv[1:]
+    verbose = False
+    while args and args[0] in ("-v", "--verbose"):
+        verbose = True
+        args = args[1:]
+    ifname = args[0] if args else os.environ.get("UL_ECAT_SLAVE_IFACE", "eth0")
+    sim = ServoSim(verbose=verbose)
     s = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(ETH_P_ECAT))
     s.bind((ifname, 0))
     print(

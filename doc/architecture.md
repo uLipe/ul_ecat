@@ -19,6 +19,7 @@ flowchart TB
     Frame[ul_ecat_frame.c]
     Al[ul_ecat_al.c]
     Master[ul_ecat_master.c]
+    Slave[ul_ecat_slave / ESC model]
   end
   subgraph osal_api [OSAL API]
     OsalH[ul_ecat_osal.h]
@@ -41,6 +42,8 @@ flowchart TB
   end
   Master --> Frame
   Master --> Al
+  Slave --> Frame
+  Slave --> Al
   Master --> OsalH
   Master --> TrH
   OsalH -.-> OsalL
@@ -138,8 +141,28 @@ DC and raw frame events are posted to a **bounded queue** (`MAX_EVENTS`). The ap
 
 Integration steps for RTOS builds: [README § Quick start](../README.md#quick-start-zephyr-and-nuttx), [`zephyr-module.md`](zephyr-module.md), [`nuttx-module.md`](nuttx-module.md).
 
+## EtherCAT slave library (`libul_ecat_slave`)
+
+The **slave** side is a separate static library that reuses the same **wire** encode/decode (`src/common/ul_ecat_frame.c`, `src/common/ul_ecat_al.c`) via the internal **`ul_ecat_wire`** CMake target. It does **not** use OSAL or transport.
+
+| Piece | Role |
+|-------|------|
+| `src/slave/ul_ecat_esc.c` | Byte mirror of ESC registers; identity and AL Status defaults |
+| `src/slave/ul_ecat_slave_pdu.c` | Walk input datagrams, apply **FPRD / FPWR / APWR**, build reply PDU with WKC |
+| `src/slave/ul_ecat_slave.c` | `ul_ecat_slave_process_ethernet`: parse Ethernet, call PDU handler, rebuild reply frame |
+| `generated/ul_ecat_slave_tables.c` | Optional committed identity from [`scripts/gen_slave_data.py`](../scripts/gen_slave_data.py) |
+
+See [`slave-architecture.md`](slave-architecture.md) and [`slave-mental-model.md`](slave-mental-model.md).
+
+## Host simulator (TCP harness + Python controller)
+
+For tests without raw Ethernet, `tools/ul_ecat_slave_harness` listens on **127.0.0.1** and exchanges **length-prefixed** raw Ethernet frames. The **EtherCAT controller simulator** ([`scripts/ethercat_controller_sim.py`](../scripts/ethercat_controller_sim.py)) connects as a client and runs the same **scan sequence** as the C master (APWR station, FPRD identity). Details: [`simulator.md`](simulator.md).
+
 ## Related documents
 
-- [`mental-model.md`](mental-model.md) — PDU/datagram/WKC/AL field layout
+- [`mental-model.md`](mental-model.md) — PDU/datagram/WKC/AL field layout (master-centric)
+- [`slave-mental-model.md`](slave-mental-model.md) — slave view of ADP/ADO and WKC
+- [`slave-architecture.md`](slave-architecture.md) — slave layers and files
+- [`simulator.md`](simulator.md) — TCP framing and controller simulator
 - [`porting-guide.md`](porting-guide.md) — adding a new OSAL/transport pair
 - [`repository-layout.md`](repository-layout.md) — directory tree

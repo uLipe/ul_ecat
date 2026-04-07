@@ -1,11 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(ul_ecat
-    VERSION 0.2.0
-    DESCRIPTION "Minimal EtherCAT master library (Linux raw sockets)"
+    VERSION 0.3.0
+    DESCRIPTION "Minimal EtherCAT master/slave libraries (ETG wire format)"
     LANGUAGES C CXX
 )
 
+option(UL_ECAT_BUILD_MASTER "Build EtherCAT master library (libul_ecat)" ON)
+option(UL_ECAT_BUILD_SLAVE "Build EtherCAT slave library (libul_ecat_slave)" ON)
 option(UL_ECAT_BUILD_TESTS "Build unit tests (GoogleTest)" ON)
 option(UL_ECAT_BUILD_TOOLS "Build legacy C ecatTool executable" OFF)
 option(UL_ECAT_BUILD_SHARED "Build shared libul_ecat.so (Python FFI / ctypes)" ON)
@@ -23,55 +25,104 @@ if(UL_ECAT_ENABLE_COVERAGE AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     add_link_options(--coverage)
 endif()
 
-add_library(ul_ecat
-    src/ul_ecat_al.c
-    src/ul_ecat_frame.c
-    src/ul_ecat_master.c
-    src/osal/osal_linux.c
-    src/transport/transport_linux.c
+# Shared wire format + AL helpers (static lib linked by master and/or slave)
+add_library(ul_ecat_wire STATIC
+    src/common/ul_ecat_frame.c
+    src/common/ul_ecat_al.c
 )
-add_library(ul_ecat::ul_ecat ALIAS ul_ecat)
-
-target_include_directories(ul_ecat
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
+target_include_directories(ul_ecat_wire PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
+set_target_properties(ul_ecat_wire PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-target_link_libraries(ul_ecat PUBLIC pthread)
+if(NOT UL_ECAT_BUILD_MASTER AND NOT UL_ECAT_BUILD_SLAVE)
+    message(FATAL_ERROR "Enable at least one of UL_ECAT_BUILD_MASTER or UL_ECAT_BUILD_SLAVE")
+endif()
 
-set_target_properties(ul_ecat PROPERTIES
-    POSITION_INDEPENDENT_CODE ON
-)
-
-if(UL_ECAT_BUILD_SHARED)
-    add_library(ul_ecat_shared SHARED
-        src/ul_ecat_al.c
-        src/ul_ecat_frame.c
-        src/ul_ecat_master.c
+if(UL_ECAT_BUILD_MASTER)
+    add_library(ul_ecat STATIC
+        src/master/ul_ecat_master.c
         src/osal/osal_linux.c
         src/transport/transport_linux.c
     )
-    add_library(ul_ecat::shared ALIAS ul_ecat_shared)
-    target_include_directories(ul_ecat_shared
+    add_library(ul_ecat::ul_ecat ALIAS ul_ecat)
+
+    target_include_directories(ul_ecat
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
-    target_link_libraries(ul_ecat_shared PUBLIC pthread)
-    set_target_properties(ul_ecat_shared PROPERTIES
-        OUTPUT_NAME ul_ecat
+
+    target_link_libraries(ul_ecat PUBLIC ul_ecat_wire pthread)
+
+    set_target_properties(ul_ecat PROPERTIES
         POSITION_INDEPENDENT_CODE ON
     )
+
+    if(UL_ECAT_BUILD_SHARED)
+        add_library(ul_ecat_shared SHARED
+            src/master/ul_ecat_master.c
+            src/osal/osal_linux.c
+            src/transport/transport_linux.c
+        )
+        add_library(ul_ecat::shared ALIAS ul_ecat_shared)
+        target_include_directories(ul_ecat_shared
+            PUBLIC
+                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+                $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+            PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/src
+        )
+        target_link_libraries(ul_ecat_shared PUBLIC ul_ecat_wire pthread)
+        set_target_properties(ul_ecat_shared PROPERTIES
+            OUTPUT_NAME ul_ecat
+            POSITION_INDEPENDENT_CODE ON
+        )
+    endif()
+
+    if(UL_ECAT_BUILD_TOOLS)
+        add_executable(ecatTool tools/ul_ecat_tool.c)
+        target_link_libraries(ecatTool PRIVATE ul_ecat)
+    endif()
 endif()
 
-if(UL_ECAT_BUILD_TOOLS)
-    add_executable(ecatTool tools/ul_ecat_tool.c)
-    target_link_libraries(ecatTool PRIVATE ul_ecat)
+if(UL_ECAT_BUILD_SLAVE)
+    find_program(UL_ECAT_PYTHON3 NAMES python3 python)
+    if(UL_ECAT_PYTHON3)
+        add_custom_target(ul_ecat_regen_slave_tables
+            COMMAND ${UL_ECAT_PYTHON3} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_slave_data.py
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            COMMENT "Regenerate generated/ul_ecat_slave_tables.{c,h} from scripts/gen_slave_data.py"
+            VERBATIM
+        )
+    endif()
+
+    add_library(ul_ecat_slave STATIC
+        src/slave/ul_ecat_esc.c
+        src/slave/ul_ecat_slave_pdu.c
+        src/slave/ul_ecat_slave.c
+        generated/ul_ecat_slave_tables.c
+    )
+    add_library(ul_ecat::slave ALIAS ul_ecat_slave)
+    target_include_directories(ul_ecat_slave
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/generated>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+    target_link_libraries(ul_ecat_slave PUBLIC ul_ecat_wire)
+    set_target_properties(ul_ecat_slave PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+    )
+
+    add_executable(ul_ecat_slave_harness tools/ul_ecat_slave_harness.c)
+    target_link_libraries(ul_ecat_slave_harness PRIVATE ul_ecat_slave)
+    target_include_directories(ul_ecat_slave_harness PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 endif()
 
 if(UL_ECAT_BUILD_TESTS)
@@ -88,7 +139,6 @@ if(UL_ECAT_BUILD_TESTS)
     add_subdirectory(tests)
     find_program(UL_ECAT_PYTEST NAMES pytest pytest3)
     if(UL_ECAT_PYTEST)
-        # Exclude integration test from default ctest (needs root + veth; can hang if env is wrong).
         add_test(
             NAME ul_ecat_pytest
             COMMAND ${UL_ECAT_PYTEST} ${CMAKE_CURRENT_SOURCE_DIR}/tests -v
@@ -116,15 +166,19 @@ if(UL_ECAT_ENABLE_COVERAGE AND LCOV_EXECUTABLE AND GENHTML_EXECUTABLE)
     )
 endif()
 
-if(UL_ECAT_BUILD_SHARED)
-    install(TARGETS ul_ecat ul_ecat_shared
-        EXPORT ul_ecatTargets
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    )
-else()
-    install(TARGETS ul_ecat
+set(_ul_ecat_install_targets ul_ecat_wire)
+if(UL_ECAT_BUILD_MASTER)
+    list(APPEND _ul_ecat_install_targets ul_ecat)
+    if(UL_ECAT_BUILD_SHARED)
+        list(APPEND _ul_ecat_install_targets ul_ecat_shared)
+    endif()
+endif()
+if(UL_ECAT_BUILD_SLAVE)
+    list(APPEND _ul_ecat_install_targets ul_ecat_slave ul_ecat_slave_harness)
+endif()
+
+if(_ul_ecat_install_targets)
+    install(TARGETS ${_ul_ecat_install_targets}
         EXPORT ul_ecatTargets
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -133,6 +187,10 @@ else()
 endif()
 
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+if(UL_ECAT_BUILD_SLAVE)
+    install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/generated/ul_ecat_slave_tables.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
 
 include(CMakePackageConfigHelpers)
 write_basic_package_version_file(

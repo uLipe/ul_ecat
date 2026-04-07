@@ -9,9 +9,9 @@ if(CONFIG_UL_ECAT)
   zephyr_include_directories(${UL_ECAT_ROOT}/include)
 
   zephyr_library_sources(
-    ${UL_ECAT_ROOT}/src/ul_ecat_frame.c
-    ${UL_ECAT_ROOT}/src/ul_ecat_al.c
-    ${UL_ECAT_ROOT}/src/ul_ecat_master.c
+    ${UL_ECAT_ROOT}/src/common/ul_ecat_frame.c
+    ${UL_ECAT_ROOT}/src/common/ul_ecat_al.c
+    ${UL_ECAT_ROOT}/src/master/ul_ecat_master.c
     ${UL_ECAT_ROOT}/src/osal/osal_zephyr.c
   )
 

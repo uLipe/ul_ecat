@@ -38,3 +38,9 @@ jobs:
       - name: CTest
         working-directory: build
         run: ctest --output-on-failure
+
+      # Real libul_ecat master (AF_PACKET) + Python ecat_slave_sim on a veth pair; needs root.
+      - name: E2E L2 — master scan + ecat_slave_sim
+        run: |
+          sudo env UL_ECAT_VERBOSE=1 UL_ECAT_LIB="$PWD/build/libul_ecat.so" \
+            python3 scripts/run_e2e_l2_scan.py

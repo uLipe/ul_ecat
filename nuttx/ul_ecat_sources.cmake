@@ -10,9 +10,9 @@
 set(UL_ECAT_NUTTX_INCLUDE_DIR "${UL_ECAT_ROOT}/include")
 
 set(UL_ECAT_NUTTX_SOURCES
-    "${UL_ECAT_ROOT}/src/ul_ecat_frame.c"
-    "${UL_ECAT_ROOT}/src/ul_ecat_al.c"
-    "${UL_ECAT_ROOT}/src/ul_ecat_master.c"
+    "${UL_ECAT_ROOT}/src/common/ul_ecat_frame.c"
+    "${UL_ECAT_ROOT}/src/common/ul_ecat_al.c"
+    "${UL_ECAT_ROOT}/src/master/ul_ecat_master.c"
     "${UL_ECAT_ROOT}/src/osal/osal_nuttx.c"
     "${UL_ECAT_ROOT}/src/transport/transport_nuttx.c"
 )

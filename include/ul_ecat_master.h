@@ -64,6 +64,10 @@ ul_ecat_master_slaves_t *ul_ecat_get_master_slaves(void);
 
 /**
  * @brief Discover slaves on the attached network (assigns station addresses 0x1000+n).
+ *
+ * When the environment variable @c UL_ECAT_VERBOSE is set to a non-empty value other than @c 0,
+ * the scan prints each APWR/FPRD datagram (useful for E2E demos).
+ *
  * @return 0 on success, negative on error.
  */
 int ul_ecat_scan_network(void);
