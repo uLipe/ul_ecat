@@ -37,7 +37,7 @@ int main(void)
 	memset(tx_stack, 0, sizeof(tx_stack));
 	ul_ecat_servo_sample_identity(&id);
 
-	/* SYS_INIT in ports/lan9252/zephyr/hal_zephyr.c binds SPI from /chosen ul-ecat-spi */
+	/* SYS_INIT in controllers/lan9252/ports/zephyr/hal_zephyr.c binds SPI from /chosen ul-ecat-spi */
 	k_sleep(K_MSEC(10));
 
 	if (lan9252_init() != 0) {

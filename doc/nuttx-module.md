@@ -20,7 +20,7 @@ For a one-page overview with Zephyr side by side, see [README.md § Quick start]
 |------|------|
 | [`nuttx/Kconfig`](../nuttx/Kconfig) | `CONFIG_UL_ECAT`, `CONFIG_UL_ECAT_MASTER` (needs `NET`), `CONFIG_UL_ECAT_SLAVE` (selects SPI) |
 | [`nuttx/Make.defs`](../nuttx/Make.defs) | Sets `UL_ECAT_LIB_SRCS` and `UL_ECAT_INCDIR` when `UL_ECAT_ROOT` points at this repo |
-| [`nuttx/Make.defs.slave_lan9252`](../nuttx/Make.defs.slave_lan9252) | Slave + LAN9252 + [`ports/lan9252/nuttx/hal_nuttx.c`](../ports/lan9252/nuttx/hal_nuttx.c) |
+| [`nuttx/Make.defs.slave_lan9252`](../nuttx/Make.defs.slave_lan9252) | Slave + LAN9252 + [`controllers/lan9252/ports/nuttx/hal_nuttx.c`](../controllers/lan9252/ports/nuttx/hal_nuttx.c) |
 | [`nuttx/ul_ecat_sources.cmake`](../nuttx/ul_ecat_sources.cmake) | `UL_ECAT_NUTTX_SOURCES` / `UL_ECAT_NUTTX_INCLUDE_DIR` for CMake-based NuttX builds |
 | [`nuttx/ul_ecat_slave_lan9252_sources.cmake`](../nuttx/ul_ecat_slave_lan9252_sources.cmake) | Slave + LAN9252 sources for CMake |
 | [`nuttx/CMakeLists.txt`](../nuttx/CMakeLists.txt) | Optional `ul_ecat_nuttx` and `ul_ecat_nuttx_slave_lan9252` INTERFACE libraries |

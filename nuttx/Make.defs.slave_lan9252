@@ -18,12 +18,12 @@ UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/src/slave/ul_ecat_slave_controller.c
 UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/src/slave/ul_ecat_slave_controller_lan9252.c
 UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/generated/ul_ecat_slave_tables.c
 UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/controllers/lan9252/src/lan9252.c
-UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/ports/lan9252/nuttx/hal_nuttx.c
+UL_ECAT_LIB_SRCS += $(UL_ECAT_ROOT)/controllers/lan9252/ports/nuttx/hal_nuttx.c
 
 UL_ECAT_INCDIR = $(UL_ECAT_ROOT)/include
 UL_ECAT_SLAVE_INCDIRS = $(UL_ECAT_ROOT)/generated $(UL_ECAT_ROOT)/src $(UL_ECAT_ROOT)/src/slave
-UL_ECAT_SLAVE_INCDIRS += $(UL_ECAT_ROOT)/controllers/lan9252/include $(UL_ECAT_ROOT)/ports/lan9252/nuttx
+UL_ECAT_SLAVE_INCDIRS += $(UL_ECAT_ROOT)/controllers/lan9252/include $(UL_ECAT_ROOT)/controllers/lan9252/ports/nuttx
 
 CFLAGS += -I$(UL_ECAT_ROOT)/generated -I$(UL_ECAT_ROOT)/src -I$(UL_ECAT_ROOT)/src/slave
-CFLAGS += -I$(UL_ECAT_ROOT)/controllers/lan9252/include -I$(UL_ECAT_ROOT)/ports/lan9252/nuttx
+CFLAGS += -I$(UL_ECAT_ROOT)/controllers/lan9252/include -I$(UL_ECAT_ROOT)/controllers/lan9252/ports/nuttx
 CFLAGS += -DUL_ECAT_HAVE_LAN9252_CONTROLLER=1

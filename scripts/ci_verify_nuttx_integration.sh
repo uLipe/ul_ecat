@@ -9,8 +9,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 for f in \
-	ports/lan9252/nuttx/hal_nuttx.c \
-	ports/lan9252/nuttx/hal_nuttx.h \
+	controllers/lan9252/ports/nuttx/hal_nuttx.c \
+	controllers/lan9252/ports/nuttx/hal_nuttx.h \
 	nuttx/Make.defs.slave_lan9252 \
 	nuttx/ul_ecat_slave_lan9252_sources.cmake
 do

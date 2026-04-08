@@ -23,7 +23,7 @@ set(UL_ECAT_NUTTX_SLAVE_LAN9252_SOURCES
     "${UL_ECAT_ROOT}/src/slave/ul_ecat_slave_controller_lan9252.c"
     "${UL_ECAT_ROOT}/generated/ul_ecat_slave_tables.c"
     "${UL_ECAT_ROOT}/controllers/lan9252/src/lan9252.c"
-    "${UL_ECAT_ROOT}/ports/lan9252/nuttx/hal_nuttx.c"
+    "${UL_ECAT_ROOT}/controllers/lan9252/ports/nuttx/hal_nuttx.c"
 )
 
 set(UL_ECAT_NUTTX_SLAVE_LAN9252_INCLUDE_DIRS
@@ -32,5 +32,5 @@ set(UL_ECAT_NUTTX_SLAVE_LAN9252_INCLUDE_DIRS
     "${UL_ECAT_ROOT}/src"
     "${UL_ECAT_ROOT}/src/slave"
     "${UL_ECAT_ROOT}/controllers/lan9252/include"
-    "${UL_ECAT_ROOT}/ports/lan9252/nuttx"
+    "${UL_ECAT_ROOT}/controllers/lan9252/ports/nuttx"
 )

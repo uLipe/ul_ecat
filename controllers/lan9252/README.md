@@ -2,6 +2,8 @@
 
 Portable C99 helpers for the **Microchip LAN9252** EtherCAT Slave Controller accessed over the **SPI PDI** (serial mode). The chip terminates the EtherCAT network; the MCU only moves data over SPI.
 
+RTOS integration (Zephyr / NuttX HALs) lives under **[`ports/`](ports/README.md)** in this same tree — not at the repo root.
+
 ## References
 
 - Register map and SPI sequences are aligned with the **SOES** reference (`soes/hal/rt-kernel-lan9252/esc_hw.c`, OpenEtherCAT Society) and the Microchip LAN9252 datasheet.

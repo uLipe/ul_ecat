@@ -29,7 +29,7 @@ The sample [`samples/zephyr/ul_ecat_scan`](../samples/zephyr/ul_ecat_scan) appen
 | `CONFIG_UL_ECAT` | Enables the module library. You must also enable **`CONFIG_UL_ECAT_MASTER` and/or `CONFIG_UL_ECAT_SLAVE`**. |
 | `CONFIG_UL_ECAT_MASTER` | Builds the master core (scan, AL queue, DC hooks). Requires networking; implies `CONFIG_NET_SOCKETS`, `CONFIG_NET_SOCKETS_PACKET`, and basic IPv4/IPv6 stack symbols as needed by typical Ethernet setups. |
 | `CONFIG_UL_ECAT_SLAVE` | Builds the ESC/slave stack and LAN9252 driver. **Selects `CONFIG_SPI`** (no Ethernet required). |
-| `CONFIG_UL_ECAT_LAN9252_HAL` | Zephyr SPI HAL ([`ports/lan9252/zephyr/hal_zephyr.c`](../ports/lan9252/zephyr/hal_zephyr.c)): devicetree `/chosen` property **`ul-ecat-spi`**, `SYS_INIT` bind, manual CS. Default `y` when slave is enabled. |
+| `CONFIG_UL_ECAT_LAN9252_HAL` | Zephyr SPI HAL ([`controllers/lan9252/ports/zephyr/hal_zephyr.c`](../controllers/lan9252/ports/zephyr/hal_zephyr.c)): devicetree `/chosen` property **`ul-ecat-spi`**, `SYS_INIT` bind, manual CS. Default `y` when slave is enabled. |
 | `CONFIG_UL_ECAT_TRANSPORT_NETDEV` | **TX path:** send frames with `net_if_queue_tx()` / `net_pkt` instead of `zsock_send()`. RX still uses the packet socket opened on the same interface. |
 
 Slave + LAN9252 on RTOS is described in [`doc/rtos-lan9252.md`](rtos-lan9252.md). Reference application: [`samples/zephyr/ul_ecat_servo`](../samples/zephyr/ul_ecat_servo/).

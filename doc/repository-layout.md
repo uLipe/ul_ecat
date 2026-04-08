@@ -46,14 +46,6 @@ ul_ecat/
     ul_ecat_sources.cmake
     ul_ecat_slave_lan9252_sources.cmake
     CMakeLists.txt
-  ports/
-    lan9252/
-      README.md
-      zephyr/
-        hal_zephyr.c        # Zephyr SPI HAL (/chosen ul-ecat-spi, SYS_INIT)
-      nuttx/
-        hal_nuttx.c         # NuttX SPI HAL (SPI_LOCK / SPI_SELECT / SNDBLOCK)
-        hal_nuttx.h
   samples/
     common/
       ul_ecat_servo_sample.h
@@ -79,6 +71,10 @@ ul_ecat/
     test_integration_sim.py # optional veth+sim (excluded from default ctest)
   controllers/
     lan9252/              # Optional LAN9252 SPI bridge (UL_ECAT_BUILD_LAN9252)
+      ports/              # RTOS HALs (Zephyr, NuttX) — see ports/README.md
+        zephyr/hal_zephyr.c
+        nuttx/hal_nuttx.c
+        nuttx/hal_nuttx.h
   doc/
     *.md
     lan9252-datasheet-reference.md

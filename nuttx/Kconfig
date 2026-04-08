@@ -25,5 +25,5 @@ config UL_ECAT_SLAVE
 	depends on UL_ECAT
 	select SPI
 	help
-	  ESC mirror, PDU handling, LAN9252 driver + NuttX SPI HAL (ports/lan9252/nuttx/hal_nuttx.c).
+	  ESC mirror, PDU handling, LAN9252 driver + NuttX SPI HAL (controllers/lan9252/ports/nuttx/hal_nuttx.c).
 	  Enable your board SPI driver (e.g. CONFIG_STM32_SPI1 / SPI0) in defconfig.
