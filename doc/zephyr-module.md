@@ -65,3 +65,7 @@ Requirements depend on the board:
 ## Versioning
 
 Fix a Zephyr **LTS** or release in your product manifest; packet socket and `net_if` APIs evolve between releases. If something fails to link, compare the sample with [`samples/net/sockets/packet`](https://github.com/zephyrproject-rtos/zephyr/tree/main/samples/net/sockets/packet) in the same Zephyr revision.
+
+## CI (GitHub Actions)
+
+The workflow [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs [`scripts/ci_build_zephyr_samples.sh`](../scripts/ci_build_zephyr_samples.sh): it clones Zephyr (default ref `v3.7.2`), installs the matching Zephyr SDK (including the Xtensa ESP32 toolchain), runs `west zephyr-export`, then compiles **`samples/zephyr/ul_ecat_scan`** for **`native_sim/native/64`** (master) and **`samples/zephyr/ul_ecat_servo`** for **`esp32_devkitc_wroom/esp32/procpu`** (slave, using [`boards/esp32_devkitc_wroom_procpu.overlay`](../samples/zephyr/ul_ecat_servo/boards/esp32_devkitc_wroom_procpu.overlay)). NuttX does not run a full BSP build; [`scripts/ci_verify_nuttx_integration.sh`](../scripts/ci_verify_nuttx_integration.sh) only checks that integration files exist.

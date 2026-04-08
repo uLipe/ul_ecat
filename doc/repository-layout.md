@@ -65,6 +65,8 @@ ul_ecat/
     ul_ecat_tool.c          # Optional thin main() → ul_ecat_app_execute
     ul_ecat_slave_harness.c # TCP loopback server for slave tests
   scripts/
+    ci_build_zephyr_samples.sh   # CI: west + SDK + build scan + servo samples
+    ci_verify_nuttx_integration.sh
     ul_ecat_tool.py         # Python CLI (ctypes master + slave-emulator)
     gen_slave_data.py       # Generates generated/ul_ecat_slave_tables.{c,h}
     ethercat_controller_sim.py  # Stateful scan client for harness tests

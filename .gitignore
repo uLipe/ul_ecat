@@ -1,4 +1,7 @@
 build/
+.zephyr-ci/
+build-ci-zephyr-scan/
+build-ci-zephyr-servo/
 __pycache__/
 .pytest_cache/
 *.gcno

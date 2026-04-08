@@ -46,7 +46,7 @@ static int ul_ecat_lan9252_hal_init(void)
 {
 	int ret;
 
-	g_spi = SPI_DT_SPEC_GET(UL_ECAT_SPI_NODE, UL_ECAT_SPI_OP, 0);
+	g_spi = (struct spi_dt_spec)SPI_DT_SPEC_GET(UL_ECAT_SPI_NODE, UL_ECAT_SPI_OP, 0);
 	if (!spi_is_ready_dt(&g_spi)) {
 		return -ENODEV;
 	}

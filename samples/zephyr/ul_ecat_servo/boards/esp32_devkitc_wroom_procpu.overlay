@@ -1,0 +1,18 @@
+/*
+ * CI / ESP32-DevKitC (WROOM): LAN9252 lógico em SPI2 (CSEL GPIO15 no pinctrl da placa).
+ * Ajusta o overlay para o teu hardware real (bus, CS, frequência).
+ */
+
+/ {
+	chosen {
+		ul-ecat-spi = &lan9252;
+	};
+};
+
+&spi2 {
+	lan9252: lan9252@0 {
+		compatible = "vnd,spi-device";
+		reg = <0>;
+		spi-max-frequency = <8000000>;
+	};
+};

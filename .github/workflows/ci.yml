@@ -45,3 +45,41 @@ jobs:
         run: |
           sudo env UL_ECAT_VERBOSE=1 UL_ECAT_LIB="$PWD/build/libul_ecat.so" \
             python3 scripts/run_e2e_l2_scan.py
+
+  # Zephyr: compile master (ul_ecat_scan, native_sim) + slave (ul_ecat_servo, ESP32-DevKitC WROOM).
+  zephyr-samples:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install host packages (Zephyr native_sim + SDK)
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build wget gperf device-tree-compiler git \
+            gcc-multilib g++-multilib libc6-dev-i386 \
+            python3-pip python3-setuptools python3-wheel python3-venv
+
+      - name: Cache Zephyr CI workspace
+        uses: actions/cache@v4
+        with:
+          path: .zephyr-ci
+          key: zephyr-ci-${{ runner.os }}-v3.7.2-${{ hashFiles('scripts/ci_build_zephyr_samples.sh') }}
+
+      - name: Build Zephyr samples
+        env:
+          ZEPHYR_REV: v3.7.2
+          ZEPHYR_CI_HOME: ${{ github.workspace }}/.zephyr-ci
+        run: bash scripts/ci_build_zephyr_samples.sh
+
+  # NuttX: full board build is out of scope; verify integration files exist.
+  nuttx-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify NuttX integration files
+        run: bash scripts/ci_verify_nuttx_integration.sh

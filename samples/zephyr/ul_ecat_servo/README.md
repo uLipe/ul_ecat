@@ -3,9 +3,9 @@
 Requires a board with SPI and a devicetree overlay that:
 
 1. Sets `/chosen` property `ul-ecat-spi` to the SPI **device** node for the LAN9252 (child of the SPI bus), matching [`ports/lan9252/zephyr/hal_zephyr.c`](../../../ports/lan9252/zephyr/hal_zephyr.c).
-2. Defines `cs-gpios` on the SPI controller and a child node with `compatible = "vnd,spi-device"`, `reg = <0>`, and `spi-max-frequency`.
+2. Defines `cs-gpios` on the SPI controller (often in the board DTS) and a child node with `compatible = "vnd,spi-device"`, `reg = <0>`, and `spi-max-frequency`.
 
-Copy and edit [`app.overlay`](app.overlay) for your SoC (replace `&spi0`, `&gpioa`, pin numbers).
+CI compiles against **ESP32-DevKitC (WROOM)** — see [`boards/esp32_devkitc_wroom_procpu.overlay`](boards/esp32_devkitc_wroom_procpu.overlay) (`SPI2`). For other boards, add `boards/<board>_<soc>.overlay` with your `&spiN` and CS GPIO.
 
 Build (from this directory, with Zephyr environment):
 
