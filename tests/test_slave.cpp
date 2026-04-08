@@ -4,6 +4,7 @@
 
 #include "ul_ecat_frame.h"
 #include "ul_ecat_slave.h"
+#include "ul_ecat_slave_controller.h"
 
 TEST(SlaveIdentity, FprdVendorAfterApwrStation)
 {
@@ -49,4 +50,19 @@ TEST(SlaveIdentity, FprdVendorAfterApwrStation)
     EXPECT_GE(wkc, 1u);
     EXPECT_EQ((uint32_t)raw[0] | ((uint32_t)raw[1] << 8) | ((uint32_t)raw[2] << 16) | ((uint32_t)raw[3] << 24),
               id.vendor_id);
+}
+
+TEST(SlaveController, SoftwareInitAndPoll)
+{
+    ul_ecat_slave_t slave{};
+    ul_ecat_slave_controller_t ctrl{};
+    ul_ecat_slave_identity_t id = {
+        .vendor_id = 0x11223344u,
+        .product_code = 0x55667788u,
+        .revision = 0x00010203u,
+        .serial = 0xAABBCCDDu,
+    };
+    uint8_t mac[6] = {0x02, 0x11, 0x22, 0x33, 0x44, 0x55};
+    ASSERT_EQ(ul_ecat_slave_controller_init(&ctrl, &slave, UL_ECAT_SLAVE_BACKEND_SOFTWARE_ETHERNET, mac, &id), 0);
+    EXPECT_EQ(ul_ecat_slave_controller_poll(&ctrl, 0), 0);
 }

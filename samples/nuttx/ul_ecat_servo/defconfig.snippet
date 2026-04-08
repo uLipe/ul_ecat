@@ -1,0 +1,13 @@
+# Merge into board defconfig for ul_ecat_servo (NuttX 12.x / master).
+# SPI driver names vary by chip — enable the block that exposes SPI0.
+
+CONFIG_UL_ECAT=y
+CONFIG_UL_ECAT_SLAVE=y
+
+CONFIG_SPI=y
+CONFIG_SPI_DRIVER=y
+
+# Example (STM32): adjust to your family
+# CONFIG_STM32_SPI1=y
+
+CONFIG_EXAMPLES_UL_ECAT_SERVO=y

@@ -1,0 +1,13 @@
+# Copyright (c) ul_ecat contributors
+# SPDX-License-Identifier: MIT
+#
+# Add to nuttx-apps Kconfig (with nuttx/Kconfig sourced):
+#   source "/path/to/ul_ecat/samples/nuttx/ul_ecat_servo/Kconfig"
+
+config EXAMPLES_UL_ECAT_SERVO
+	bool "ul_ecat EtherCAT slave + LAN9252 servo PDO example"
+	default n
+	depends on UL_ECAT_SLAVE
+	---help---
+	  LAN9252 SPI (SPI0 via board_ul_ecat_lan9252_spi0) and fictitious CiA402-style PDO.
+	  Enable SPI in defconfig (CONFIG_SPI=y and your SoC SPI driver).

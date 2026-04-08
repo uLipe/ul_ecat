@@ -12,6 +12,7 @@ option(UL_ECAT_BUILD_TESTS "Build unit tests (GoogleTest)" ON)
 option(UL_ECAT_BUILD_TOOLS "Build legacy C ecatTool executable" OFF)
 option(UL_ECAT_BUILD_SHARED "Build shared libul_ecat.so (Python FFI / ctypes)" ON)
 option(UL_ECAT_ENABLE_COVERAGE "Compile with coverage flags (gcov)" OFF)
+option(UL_ECAT_BUILD_LAN9252 "Build LAN9252 SPI controller helper library (controllers/lan9252)" OFF)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -25,19 +26,25 @@ if(UL_ECAT_ENABLE_COVERAGE AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     add_link_options(--coverage)
 endif()
 
-# Shared wire format + AL helpers (static lib linked by master and/or slave)
-add_library(ul_ecat_wire STATIC
-    src/common/ul_ecat_frame.c
-    src/common/ul_ecat_al.c
-)
-target_include_directories(ul_ecat_wire PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
-set_target_properties(ul_ecat_wire PROPERTIES POSITION_INDEPENDENT_CODE ON)
+# Shared wire format + AL helpers (only when master and/or slave are built)
+if(UL_ECAT_BUILD_MASTER OR UL_ECAT_BUILD_SLAVE)
+    add_library(ul_ecat_wire STATIC
+        src/common/ul_ecat_frame.c
+        src/common/ul_ecat_al.c
+    )
+    target_include_directories(ul_ecat_wire PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+    set_target_properties(ul_ecat_wire PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()
 
-if(NOT UL_ECAT_BUILD_MASTER AND NOT UL_ECAT_BUILD_SLAVE)
-    message(FATAL_ERROR "Enable at least one of UL_ECAT_BUILD_MASTER or UL_ECAT_BUILD_SLAVE")
+if(UL_ECAT_BUILD_LAN9252)
+    add_subdirectory(controllers/lan9252)
+endif()
+
+if(NOT UL_ECAT_BUILD_MASTER AND NOT UL_ECAT_BUILD_SLAVE AND NOT UL_ECAT_BUILD_LAN9252)
+    message(FATAL_ERROR "Enable at least one of UL_ECAT_BUILD_MASTER, UL_ECAT_BUILD_SLAVE, or UL_ECAT_BUILD_LAN9252")
 endif()
 
 if(UL_ECAT_BUILD_MASTER)
@@ -100,12 +107,18 @@ if(UL_ECAT_BUILD_SLAVE)
         )
     endif()
 
-    add_library(ul_ecat_slave STATIC
+    set(_ul_ecat_slave_src
         src/slave/ul_ecat_esc.c
         src/slave/ul_ecat_slave_pdu.c
         src/slave/ul_ecat_slave.c
+        src/slave/ul_ecat_slave_controller.c
         generated/ul_ecat_slave_tables.c
     )
+    if(UL_ECAT_BUILD_LAN9252)
+        list(APPEND _ul_ecat_slave_src src/slave/ul_ecat_slave_controller_lan9252.c)
+    endif()
+
+    add_library(ul_ecat_slave STATIC ${_ul_ecat_slave_src})
     add_library(ul_ecat::slave ALIAS ul_ecat_slave)
     target_include_directories(ul_ecat_slave
         PUBLIC
@@ -116,6 +129,10 @@ if(UL_ECAT_BUILD_SLAVE)
             ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
     target_link_libraries(ul_ecat_slave PUBLIC ul_ecat_wire)
+    if(UL_ECAT_BUILD_LAN9252)
+        target_link_libraries(ul_ecat_slave PUBLIC ul_ecat_lan9252)
+        target_compile_definitions(ul_ecat_slave PRIVATE UL_ECAT_HAVE_LAN9252_CONTROLLER=1)
+    endif()
     set_target_properties(ul_ecat_slave PROPERTIES
         POSITION_INDEPENDENT_CODE ON
     )
@@ -166,7 +183,10 @@ if(UL_ECAT_ENABLE_COVERAGE AND LCOV_EXECUTABLE AND GENHTML_EXECUTABLE)
     )
 endif()
 
-set(_ul_ecat_install_targets ul_ecat_wire)
+set(_ul_ecat_install_targets "")
+if(UL_ECAT_BUILD_MASTER OR UL_ECAT_BUILD_SLAVE)
+    list(APPEND _ul_ecat_install_targets ul_ecat_wire)
+endif()
 if(UL_ECAT_BUILD_MASTER)
     list(APPEND _ul_ecat_install_targets ul_ecat)
     if(UL_ECAT_BUILD_SHARED)
@@ -175,6 +195,9 @@ if(UL_ECAT_BUILD_MASTER)
 endif()
 if(UL_ECAT_BUILD_SLAVE)
     list(APPEND _ul_ecat_install_targets ul_ecat_slave ul_ecat_slave_harness)
+endif()
+if(UL_ECAT_BUILD_LAN9252)
+    list(APPEND _ul_ecat_install_targets ul_ecat_lan9252)
 endif()
 
 if(_ul_ecat_install_targets)
@@ -187,6 +210,10 @@ if(_ul_ecat_install_targets)
 endif()
 
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+if(UL_ECAT_BUILD_LAN9252)
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/controllers/lan9252/include/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
 if(UL_ECAT_BUILD_SLAVE)
     install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/generated/ul_ecat_slave_tables.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

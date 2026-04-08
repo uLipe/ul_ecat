@@ -16,7 +16,7 @@ EtherCAT® is a registered trademark. This project is not affiliated with EtherC
 - **POSIX** periodic thread with **SCHED_FIFO** / `mlockall` — on failure, **warnings** and fallback (non-fatal)
 - **CMake** install + `ul_ecatConfig.cmake` for embedding in other projects
 - **GoogleTest** unit tests and **pytest** smoke tests for the Python CLI
-- **`libul_ecat_slave`** — ESC register mirror + PDU replies (**FPRD / FPWR / APWR**); shared **`ul_ecat_wire`** (`src/common/`) with the master
+- **`libul_ecat_slave`** — ESC register mirror + PDU replies (**FPRD / FPWR / APWR**); shared **`ul_ecat_wire`** (`src/common/`) with the master; optional **`ul_ecat_slave_controller`** ([`include/ul_ecat_slave_controller.h`](include/ul_ecat_slave_controller.h)) for app-facing **poll + callbacks** (software Ethernet vs LAN9252 SPI when `UL_ECAT_BUILD_LAN9252=ON`)
 - **Host test link**: `tools/ul_ecat_slave_harness` (TCP) + `scripts/ethercat_controller_sim.py` (stateful scan, not a mock)
 - **Python** `scripts/ul_ecat_tool.py` (ctypes master CLI + `slave-emulator` mode) and optional `scripts/ecat_slave_sim.py` for raw L2 experiments
 - **Zephyr** module (Kconfig + CMake): [`doc/zephyr-module.md`](doc/zephyr-module.md) — sample [`samples/zephyr/ul_ecat_scan`](samples/zephyr/ul_ecat_scan) runs `ul_ecat_scan_network` with `ZEPHYR_EXTRA_MODULES` pointing at this repo
@@ -93,6 +93,7 @@ Artifacts:
 | `UL_ECAT_BUILD_SHARED` | ON | Build `libul_ecat.so` |
 | `UL_ECAT_BUILD_TOOLS` | OFF | Legacy C `ecatTool` executable |
 | `UL_ECAT_ENABLE_COVERAGE` | OFF | Add `--coverage` (gcov/lcov) for all compiled targets in the build |
+| `UL_ECAT_BUILD_LAN9252` | OFF | Build `libul_ecat_lan9252` ([`controllers/lan9252`](controllers/lan9252/README.md)) — SPI bridge only; can be built without master/slave |
 
 ## Install
 
@@ -214,7 +215,8 @@ See the `doc/` directory:
 - **Embedded quick reference:** [`doc/zephyr-module.md`](doc/zephyr-module.md), [`doc/nuttx-module.md`](doc/nuttx-module.md) (and the [Quick start](#quick-start-zephyr-and-nuttx) above)
 - `doc/architecture.md` — **layers, OSAL/transport separation, diagrams, threading** (start here for structure)
 - `doc/mental-model.md` — ADP/ADO, WKC, AL states (master-centric)
-- `doc/slave-architecture.md`, `doc/slave-mental-model.md` — **slave** stack
+- `doc/slave-architecture.md`, `doc/slave-mental-model.md` — **slave** stack and **`ul_ecat_slave_controller`**
+- **Master** event hooks: `ul_ecat_register_dc_callback`, `ul_ecat_register_frame_callback`, `ul_ecat_eventloop_run` ([`include/ul_ecat_master.h`](include/ul_ecat_master.h)) — no duplicate “generic” callback API added for scan completion; use the existing DB after `ul_ecat_scan_network`
 - `doc/simulator.md` — TCP harness + **EtherCAT controller simulator** (`scripts/ethercat_controller_sim.py`)
 - `doc/repository-layout.md` — repository map
 - `doc/porting-guide.md` — OSAL/transport ports (Linux, Zephyr, NuttX, others)

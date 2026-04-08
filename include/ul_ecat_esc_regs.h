@@ -17,5 +17,7 @@
 #define UL_ECAT_ESC_REG_SERIAL  0x001Eu
 #define UL_ECAT_ESC_REG_ALCTL   0x0120u
 #define UL_ECAT_ESC_REG_ALSTAT  0x0130u
+/** AL Event register (4 bytes, ETG). */
+#define UL_ECAT_ESC_REG_ALEVENT 0x0220u
 
 #endif /* UL_ECAT_ESC_REGS_H */

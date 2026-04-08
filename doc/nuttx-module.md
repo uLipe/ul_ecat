@@ -18,13 +18,18 @@ For a one-page overview with Zephyr side by side, see [README.md § Quick start]
 
 | Path | Role |
 |------|------|
-| [`nuttx/Kconfig`](../nuttx/Kconfig) | `CONFIG_UL_ECAT`, `CONFIG_UL_ECAT_MASTER` (selects `CONFIG_NET_PKT`) |
+| [`nuttx/Kconfig`](../nuttx/Kconfig) | `CONFIG_UL_ECAT`, `CONFIG_UL_ECAT_MASTER` (needs `NET`), `CONFIG_UL_ECAT_SLAVE` (selects SPI) |
 | [`nuttx/Make.defs`](../nuttx/Make.defs) | Sets `UL_ECAT_LIB_SRCS` and `UL_ECAT_INCDIR` when `UL_ECAT_ROOT` points at this repo |
+| [`nuttx/Make.defs.slave_lan9252`](../nuttx/Make.defs.slave_lan9252) | Slave + LAN9252 + [`ports/lan9252/nuttx/hal_nuttx.c`](../ports/lan9252/nuttx/hal_nuttx.c) |
 | [`nuttx/ul_ecat_sources.cmake`](../nuttx/ul_ecat_sources.cmake) | `UL_ECAT_NUTTX_SOURCES` / `UL_ECAT_NUTTX_INCLUDE_DIR` for CMake-based NuttX builds |
-| [`nuttx/CMakeLists.txt`](../nuttx/CMakeLists.txt) | Optional `ul_ecat_nuttx` INTERFACE library (requires `UL_ECAT_ROOT`) |
+| [`nuttx/ul_ecat_slave_lan9252_sources.cmake`](../nuttx/ul_ecat_slave_lan9252_sources.cmake) | Slave + LAN9252 sources for CMake |
+| [`nuttx/CMakeLists.txt`](../nuttx/CMakeLists.txt) | Optional `ul_ecat_nuttx` and `ul_ecat_nuttx_slave_lan9252` INTERFACE libraries |
 | [`src/osal/osal_nuttx.c`](../src/osal/osal_nuttx.c) | pthread mutex/cond, worker thread, monotonic clock (no `mlockall`) |
 | [`src/transport/transport_nuttx.c`](../src/transport/transport_nuttx.c) | `AF_PACKET` / `SOCK_RAW`, `struct sockaddr_ll` from [`netpacket/packet.h`](https://github.com/apache/nuttx/blob/master/include/netpacket/packet.h), `ioctl(SIOCGIFINDEX)` |
 | [`samples/nuttx/ul_ecat_scan/`](../samples/nuttx/ul_ecat_scan/) | Example app: scan + print slaves |
+| [`samples/nuttx/ul_ecat_servo/`](../samples/nuttx/ul_ecat_servo/) | Example app: slave + LAN9252 SPI0 hook |
+
+RTOS LAN9252 details: [`doc/rtos-lan9252.md`](rtos-lan9252.md).
 
 ## Kconfig wiring (nuttx-apps)
 

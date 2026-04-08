@@ -15,10 +15,18 @@ if(NOT UL_ECAT_ROOT)
 endif()
 
 include(${CMAKE_CURRENT_LIST_DIR}/ul_ecat_sources.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/ul_ecat_slave_lan9252_sources.cmake)
 
 # Convenience interface library (optional; parent may use variables only)
 if(NOT TARGET ul_ecat_nuttx)
   add_library(ul_ecat_nuttx INTERFACE)
   target_sources(ul_ecat_nuttx INTERFACE ${UL_ECAT_NUTTX_SOURCES})
   target_include_directories(ul_ecat_nuttx INTERFACE ${UL_ECAT_NUTTX_INCLUDE_DIR})
+endif()
+
+if(NOT TARGET ul_ecat_nuttx_slave_lan9252)
+  add_library(ul_ecat_nuttx_slave_lan9252 INTERFACE)
+  target_sources(ul_ecat_nuttx_slave_lan9252 INTERFACE ${UL_ECAT_NUTTX_SLAVE_LAN9252_SOURCES})
+  target_include_directories(ul_ecat_nuttx_slave_lan9252 INTERFACE ${UL_ECAT_NUTTX_SLAVE_LAN9252_INCLUDE_DIRS})
+  target_compile_definitions(ul_ecat_nuttx_slave_lan9252 INTERFACE UL_ECAT_HAVE_LAN9252_CONTROLLER=1)
 endif()

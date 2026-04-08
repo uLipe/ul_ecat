@@ -5,3 +5,5 @@ __pycache__/
 *.gcda
 coverage.info
 coverage_html/
+Testing/
+build-*/

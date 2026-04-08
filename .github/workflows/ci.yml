@@ -35,6 +35,7 @@ jobs:
       - name: Build
         run: cmake --build build --parallel $(nproc)
 
+      # CTest: ul_ecat_gtest, ul_ecat_slave_gtest, ul_ecat_slave_controller_gtest (HAL LAN9252 mock), ul_ecat_pytest
       - name: CTest
         working-directory: build
         run: ctest --output-on-failure
