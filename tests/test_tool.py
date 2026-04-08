@@ -28,9 +28,23 @@ def test_python_cli_help_runs():
     import sys
 
     script = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "scripts", "ul_ecat_tool.py"))
-    r = subprocess.run([sys.executable, script], capture_output=True, text=True, timeout=5)
-    # Missing args -> app_execute prints usage; ctypes may fail if .so missing
-    assert r.returncode in (0, 1)
+    r = subprocess.run([sys.executable, script, "--help"], capture_output=True, text=True, timeout=5)
+    assert r.returncode == 0
+    assert "ul-ecat" in r.stdout or "-c" in r.stdout or "command" in r.stdout.lower()
+
+
+def test_python_cli_batch_help_command():
+    import subprocess
+    import sys
+
+    script = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "scripts", "ul_ecat_tool.py"))
+    r = subprocess.run(
+        [sys.executable, script, "-c", "help"],
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    assert r.returncode == 0
 
 
 def test_slave_sim_imports():

@@ -113,6 +113,18 @@ void ul_ecat_queue_fprd(uint16_t adp, uint16_t ado, uint16_t length);
  */
 void ul_ecat_queue_fpwr(uint16_t adp, uint16_t ado, const void *data, uint16_t length);
 
+/**
+ * @brief Blocking FPRD: one datagram, wait for response with WKC >= 1.
+ * @return number of bytes written to @p out on success, -1 on error / WKC=0 / timeout.
+ */
+int ul_ecat_fprd_sync(uint16_t adp, uint16_t ado, uint16_t len, uint8_t *out, size_t out_cap, int timeout_ms);
+
+/**
+ * @brief Blocking FPWR: one datagram, wait for response with WKC >= 1.
+ * @return 0 on success, -1 on error / WKC=0 / timeout.
+ */
+int ul_ecat_fpwr_sync(uint16_t adp, uint16_t ado, const void *data, uint16_t len, int timeout_ms);
+
 typedef void (*ul_ecat_dc_callback_t)(const ul_ecat_dc_event_info_t *info);
 typedef void (*ul_ecat_frame_callback_t)(const struct ul_ecat_frame *frame, ssize_t frame_len);
 

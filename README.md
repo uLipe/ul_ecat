@@ -18,7 +18,7 @@ EtherCAT® is a registered trademark. This project is not affiliated with EtherC
 - **GoogleTest** unit tests and **pytest** smoke tests for the Python CLI
 - **`libul_ecat_slave`** — ESC register mirror + PDU replies (**FPRD / FPWR / APWR**); shared **`ul_ecat_wire`** (`src/common/`) with the master; optional **`ul_ecat_slave_controller`** ([`include/ul_ecat_slave_controller.h`](include/ul_ecat_slave_controller.h)) for app-facing **poll + callbacks** (software Ethernet vs LAN9252 SPI when `UL_ECAT_BUILD_LAN9252=ON`)
 - **Host test link**: `tools/ul_ecat_slave_harness` (TCP) + `scripts/ethercat_controller_sim.py` (stateful scan, not a mock)
-- **Python** `scripts/ul_ecat_tool.py` (ctypes master CLI + `slave-emulator` mode) and optional `scripts/ecat_slave_sim.py` for raw L2 experiments
+- **Python** `scripts/ul_ecat_tool.py` (interactive/batch master CLI, legacy `ul_ecat_app_execute`, + `slave-emulator`) and optional `scripts/ecat_slave_sim.py` for raw L2 experiments
 - **Zephyr** module (Kconfig + CMake): [`doc/zephyr-module.md`](doc/zephyr-module.md) — sample [`samples/zephyr/ul_ecat_scan`](samples/zephyr/ul_ecat_scan) runs `ul_ecat_scan_network` with `ZEPHYR_EXTRA_MODULES` pointing at this repo
 - **NuttX** (Kconfig + Make/CMake helpers): [`doc/nuttx-module.md`](doc/nuttx-module.md) — sample [`samples/nuttx/ul_ecat_scan`](samples/nuttx/ul_ecat_scan), sources under [`nuttx/`](nuttx/)
 
@@ -157,12 +157,18 @@ Manual `lcov`/`genhtml` from `build/` works the same as documented in the covera
 
 ## Python CLI
 
-**Master** (ctypes; same arguments as the C `ul_ecat_app_execute` / legacy `ecatTool`):
+**Master** (ctypes against `libul_ecat.so`):
+
+- **Privileges:** raw Ethernet (`AF_PACKET`) needs **CAP_NET_RAW** — run with **`sudo`** (or set `cap_net_raw` on the Python binary; see tool help text). This is normal Linux behaviour, not a missing dependency in the repo.
+- **Interactive** (TTY, no arguments): REPL similar to `bluetoothctl` — `interface <iface>`, `scan`, `list`, `read`, `write`, `help`, `quit`.
+- **Batch**: `python3 scripts/ul_ecat_tool.py -c 'interface eth0; scan; list'` (semicolon-separated commands).
+- **Legacy** (same as C `ul_ecat_app_execute` / `ecatTool`): `python3 scripts/ul_ecat_tool.py <iface> <command> [args...]`.
 
 ```bash
 export UL_ECAT_LIB=$PWD/build/libul_ecat.so   # if not found automatically
 python3 scripts/ul_ecat_tool.py eth0 scan
 python3 scripts/ul_ecat_tool.py eth0 read 0x1000 0x0130 2
+python3 scripts/ul_ecat_tool.py -c "help"
 ```
 
 **Slave emulator** (loopback TCP harness + controller simulator; no raw sockets):

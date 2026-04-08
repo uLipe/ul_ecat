@@ -484,6 +484,66 @@ static int fprd_blocking(uint16_t station, uint16_t ado, void *out, uint16_t len
     return 0;
 }
 
+static int fpwr_blocking(uint16_t adp, uint16_t ado, const void *data, uint16_t len,
+                         uint16_t *wkc_out, int timeout_ms)
+{
+    uint8_t dg[512];
+    int enc = ul_ecat_dgram_encode(dg, sizeof(dg), UL_ECAT_CMD_FPWR, 0,
+                                   adp, ado, len, 0u, 0u, data);
+    if (enc < 0) {
+        return -1;
+    }
+    uint8_t resp[512];
+    size_t rlen = 0;
+    if (exchange_ec_payload(dg, (size_t)enc, resp, &rlen, sizeof(resp), timeout_ms) != 0) {
+        return -1;
+    }
+    uint16_t wkc = 0;
+    if (ul_ecat_dgram_parse(resp, rlen, 0, NULL, NULL, NULL, NULL, NULL, NULL, &wkc, NULL, 0) != 0) {
+        return -1;
+    }
+    if (wkc_out) {
+        *wkc_out = wkc;
+    }
+    return 0;
+}
+
+int ul_ecat_fprd_sync(uint16_t adp, uint16_t ado, uint16_t len, uint8_t *out, size_t out_cap, int timeout_ms)
+{
+    if (!out || len == 0u || out_cap < (size_t)len || g_sockfd < 0) {
+        return -1;
+    }
+    if (len > 512u) {
+        return -1;
+    }
+    uint16_t wkc = 0;
+    if (fprd_blocking(adp, ado, out, len, &wkc, timeout_ms) != 0) {
+        return -1;
+    }
+    if (wkc < 1u) {
+        return -1;
+    }
+    return (int)len;
+}
+
+int ul_ecat_fpwr_sync(uint16_t adp, uint16_t ado, const void *data, uint16_t len, int timeout_ms)
+{
+    if (!data || len == 0u || g_sockfd < 0) {
+        return -1;
+    }
+    if (len > 512u) {
+        return -1;
+    }
+    uint16_t wkc = 0;
+    if (fpwr_blocking(adp, ado, data, len, &wkc, timeout_ms) != 0) {
+        return -1;
+    }
+    if (wkc < 1u) {
+        return -1;
+    }
+    return 0;
+}
+
 int ul_ecat_scan_network(void)
 {
     g_scan_trace = scan_verbose_env();
@@ -1010,7 +1070,21 @@ int ul_ecat_app_execute(int argc, char *argv[])
         uint16_t adp = (uint16_t)strtol(argv[3], NULL, 16);
         uint16_t ado = (uint16_t)strtol(argv[4], NULL, 16);
         uint16_t ln = (uint16_t)strtol(argv[5], NULL, 0);
-        ul_ecat_queue_fprd(adp, ado, ln);
+        uint8_t buf[512];
+        if (ln == 0u || ln > sizeof(buf)) {
+            printf("len must be 1..%zu\n", sizeof(buf));
+            ul_ecat_master_shutdown();
+            return 1;
+        }
+        int n = ul_ecat_fprd_sync(adp, ado, ln, buf, sizeof(buf), 2000);
+        if (n < 0) {
+            fprintf(stderr, "FPRD failed (timeout or WKC=0).\n");
+        } else {
+            for (int i = 0; i < n; i++) {
+                printf("%02X ", buf[i]);
+            }
+            printf("\n");
+        }
     } else if (strcmp(cmd, "write") == 0) {
         if (argc < 6) {
             printf("write <adp_hex> <ado_hex> <val_hex> [size=4]\n");
@@ -1024,7 +1098,14 @@ int ul_ecat_app_execute(int argc, char *argv[])
         if (argc >= 7) {
             sz = (uint16_t)strtol(argv[6], NULL, 0);
         }
-        ul_ecat_queue_fpwr(adp, ado, &val, sz);
+        if (sz == 0u || sz > 4u) {
+            printf("size must be 1..4\n");
+            ul_ecat_master_shutdown();
+            return 1;
+        }
+        if (ul_ecat_fpwr_sync(adp, ado, &val, sz, 2000) != 0) {
+            fprintf(stderr, "FPWR failed (timeout or WKC=0).\n");
+        }
     } else if (strcmp(cmd, "stop") == 0) {
         ul_ecat_master_shutdown();
         return 0;
