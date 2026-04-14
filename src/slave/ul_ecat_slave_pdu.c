@@ -8,9 +8,16 @@
 #include <string.h>
 
 #include "ul_ecat_esc.h"
+#include "ul_ecat_esc_regs.h"
 #include "ul_ecat_slave.h"
+#include "ul_ecat_slave_al.h"
 
 #define DG_DATA_MAX 256u
+
+static int ado_range_overlaps(uint16_t ado, uint16_t dlen, uint16_t reg)
+{
+    return (ado <= reg) && ((uint32_t)ado + dlen > reg);
+}
 
 static int process_one(ul_ecat_slave_t *s, uint8_t cmd, uint16_t adp, uint16_t ado, uint16_t dlen,
                        const uint8_t *data_in, uint8_t *data_out, uint16_t *wkc_out)
@@ -33,6 +40,9 @@ static int process_one(ul_ecat_slave_t *s, uint8_t cmd, uint16_t adp, uint16_t a
             if (dlen > 0u && data_in != NULL &&
                 ul_ecat_esc_write(s->esc, ado, data_in, dlen) == 0) {
                 wkc = 1u;
+                if (ado_range_overlaps(ado, dlen, UL_ECAT_ESC_REG_ALCTL)) {
+                    ul_ecat_slave_al_on_control_write(s);
+                }
             }
         }
         break;
@@ -41,6 +51,9 @@ static int process_one(ul_ecat_slave_t *s, uint8_t cmd, uint16_t adp, uint16_t a
         if (adp == s->logical_position && dlen > 0u && data_in != NULL &&
             ul_ecat_esc_write(s->esc, ado, data_in, dlen) == 0) {
             wkc = 1u;
+            if (ado_range_overlaps(ado, dlen, UL_ECAT_ESC_REG_ALCTL)) {
+                ul_ecat_slave_al_on_control_write(s);
+            }
         }
         break;
     }

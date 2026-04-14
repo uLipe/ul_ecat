@@ -34,10 +34,15 @@ from ecat_wire import (
     ESC_REG_STADR,
     ESC_REG_ALCTL,
     ESC_REG_ALSTAT,
+    ESC_REG_ALSTACODE,
     ESC_REG_VENDOR,
     ESC_REG_PRODUCT,
     ESC_REG_REV,
     ESC_REG_SERIAL,
+    AL_VALID_TRANSITIONS,
+    AL_ERR_INVALID_STATE_CHANGE,
+    AL_ERR_BOOTSTRAP_NOT_SUPPORTED,
+    AL_STATE_BOOT,
 )
 from ecat_frame import (
     r16_le as le16,
@@ -60,10 +65,34 @@ class ServoSim:
         self.verbose = verbose
         self.station_adr: int | None = None
         self.al_state = 1  # INIT
+        self.al_error = False
+        self.al_status_code = 0
         self.vendor = _env_u32("UL_ECAT_SIM_VENDOR_ID", DEFAULT_VENDOR)
         self.product = _env_u32("UL_ECAT_SIM_PRODUCT_CODE", DEFAULT_PRODUCT)
         self.revision = _env_u32("UL_ECAT_SIM_REVISION", DEFAULT_REVISION)
         self.serial = _env_u32("UL_ECAT_SIM_SERIAL", DEFAULT_SERIAL)
+
+    def _process_al_control(self, val: int) -> None:
+        req = val & 0x000F
+        ack = val & 0x0010
+        if ack:
+            if req == self.al_state:
+                self.al_error = False
+                self.al_status_code = 0
+            return
+        if req == self.al_state:
+            return
+        if req == AL_STATE_BOOT:
+            self.al_error = True
+            self.al_status_code = AL_ERR_BOOTSTRAP_NOT_SUPPORTED
+            return
+        if req == 1 or (self.al_state, req) in AL_VALID_TRANSITIONS:
+            self.al_state = req
+            self.al_error = False
+            self.al_status_code = 0
+        else:
+            self.al_error = True
+            self.al_status_code = AL_ERR_INVALID_STATE_CHANGE
 
     def handle_one(self, cmd: int, idx: int, adp: int, ado: int, dlen: int, irq: int, data: bytearray, wkc_rx: int) -> bytes:
         wkc_out = wkc_rx + 1
@@ -71,16 +100,18 @@ class ServoSim:
         if cmd == UL_ECAT_CMD_APWR and ado == ESC_REG_STADR and dlen >= 2:
             self.station_adr = le16(bytes(data), 0)
         elif cmd == UL_ECAT_CMD_FPWR and ado == ESC_REG_ALCTL and dlen >= 2:
-            val = le16(bytes(data), 0)
-            req = val & 0x000F
-            if req in (1, 2, 3, 4, 8):
-                self.al_state = req
+            self._process_al_control(le16(bytes(data), 0))
         elif cmd == UL_ECAT_CMD_FPRD:
             if self.station_adr is not None and adp != self.station_adr:
                 wkc_out = 0
             else:
                 if ado == ESC_REG_ALSTAT and dlen >= 2:
-                    data[0:2] = w16_le(self.al_state & 0x0F)
+                    st = self.al_state & 0x0F
+                    if self.al_error:
+                        st |= 0x10
+                    data[0:2] = w16_le(st)
+                elif ado == ESC_REG_ALSTACODE and dlen >= 2:
+                    data[0:2] = w16_le(self.al_status_code)
                 elif ado == ESC_REG_VENDOR and dlen >= 4:
                     data[0:4] = u32_le(self.vendor)
                 elif ado == ESC_REG_PRODUCT and dlen >= 4:

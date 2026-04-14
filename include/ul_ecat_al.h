@@ -23,6 +23,17 @@ extern "C" {
 /** Bit 4 of AL Status: error indication (device reported error). */
 #define UL_ECAT_AL_STAT_ERR 0x0010u
 
+/* AL Status Code values (ETG.1000 Table 11, subset). */
+#define UL_ECAT_AL_ERR_NONE                    0x0000u
+#define UL_ECAT_AL_ERR_UNSPECIFIED             0x0001u
+#define UL_ECAT_AL_ERR_NO_MEMORY               0x0002u
+#define UL_ECAT_AL_ERR_INVALID_STATE_CHANGE    0x0011u
+#define UL_ECAT_AL_ERR_UNKNOWN_STATE           0x0012u
+#define UL_ECAT_AL_ERR_BOOTSTRAP_NOT_SUPPORTED 0x0013u
+#define UL_ECAT_AL_ERR_INVALID_MAILBOX_CFG     0x0016u
+#define UL_ECAT_AL_ERR_INVALID_SM_CFG          0x0017u
+#define UL_ECAT_AL_ERR_WATCHDOG_EXPIRED        0x001Bu
+
 /**
  * Build 16-bit AL Control word for FPWR (little-endian payload).
  * @param state_nibble One of 1,2,3,4,8 for INIT..OP.

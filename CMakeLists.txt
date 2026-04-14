@@ -109,6 +109,7 @@ if(UL_ECAT_BUILD_SLAVE)
 
     set(_ul_ecat_slave_src
         src/slave/ul_ecat_esc.c
+        src/slave/ul_ecat_slave_al.c
         src/slave/ul_ecat_slave_pdu.c
         src/slave/ul_ecat_slave.c
         src/slave/ul_ecat_slave_controller.c

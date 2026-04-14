@@ -25,9 +25,10 @@ void ul_ecat_esc_apply_identity(uint8_t esc[UL_ECAT_SLAVE_ESC_SIZE], const ul_ec
 
 void ul_ecat_esc_set_al_status_init(uint8_t esc[UL_ECAT_SLAVE_ESC_SIZE])
 {
-    /* State INIT = 0x1 in low nibble; no error bit */
     esc[UL_ECAT_ESC_REG_ALSTAT] = 0x01u;
     esc[UL_ECAT_ESC_REG_ALSTAT + 1] = 0x00u;
+    esc[UL_ECAT_ESC_REG_ALSTACODE] = 0x00u;
+    esc[UL_ECAT_ESC_REG_ALSTACODE + 1] = 0x00u;
 }
 
 int ul_ecat_esc_read(const uint8_t esc[UL_ECAT_SLAVE_ESC_SIZE], uint16_t ado, void *dst, size_t len)

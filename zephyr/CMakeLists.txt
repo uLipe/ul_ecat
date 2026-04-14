@@ -32,6 +32,7 @@ if(CONFIG_UL_ECAT)
     zephyr_include_directories(${UL_ECAT_ROOT}/controllers/lan9252/ports/zephyr)
 
     zephyr_library_sources(${UL_ECAT_ROOT}/src/slave/ul_ecat_esc.c)
+    zephyr_library_sources(${UL_ECAT_ROOT}/src/slave/ul_ecat_slave_al.c)
     zephyr_library_sources(${UL_ECAT_ROOT}/src/slave/ul_ecat_slave_pdu.c)
     zephyr_library_sources(${UL_ECAT_ROOT}/src/slave/ul_ecat_slave.c)
     zephyr_library_sources(${UL_ECAT_ROOT}/src/slave/ul_ecat_slave_controller.c)

@@ -22,6 +22,7 @@ endif()
 if(UL_ECAT_BUILD_SLAVE)
     add_executable(ul_ecat_slave_tests
         test_slave.cpp
+        test_al_fsm.cpp
     )
 
     target_link_libraries(ul_ecat_slave_tests PRIVATE
@@ -41,6 +42,7 @@ if(UL_ECAT_BUILD_SLAVE)
         test_slave_controller_mock.cpp
         lan9252_full_mock.c
         ${CMAKE_SOURCE_DIR}/src/slave/ul_ecat_esc.c
+        ${CMAKE_SOURCE_DIR}/src/slave/ul_ecat_slave_al.c
         ${CMAKE_SOURCE_DIR}/src/slave/ul_ecat_slave_pdu.c
         ${CMAKE_SOURCE_DIR}/src/slave/ul_ecat_slave.c
         ${CMAKE_SOURCE_DIR}/src/slave/ul_ecat_slave_controller.c
