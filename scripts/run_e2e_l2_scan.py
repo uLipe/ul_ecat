@@ -26,8 +26,8 @@ from pathlib import Path
 VETH0 = "ul_ecat_e2e0"
 VETH1 = "ul_ecat_e2e1"
 
-EXP_VENDOR = 0x00000002
-EXP_PRODUCT = 0x1C213052
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ecat_wire import DEFAULT_VENDOR as EXP_VENDOR, DEFAULT_PRODUCT as EXP_PRODUCT
 
 
 def _repo_root() -> Path:
@@ -91,23 +91,11 @@ def main() -> int:
     try:
         lib = ctypes.CDLL(so)
 
-        class MasterSettings(ctypes.Structure):
-            _fields_ = [
-                ("iface_name", ctypes.c_char_p),
-                ("dst_mac", ctypes.c_uint8 * 6),
-                ("src_mac", ctypes.c_uint8 * 6),
-                ("rt_priority", ctypes.c_int),
-                ("dc_enable", ctypes.c_int),
-                ("dc_sync0_cycle", ctypes.c_uint32),
-            ]
-
-        lib.ul_ecat_master_init.argtypes = [ctypes.POINTER(MasterSettings)]
-        lib.ul_ecat_master_init.restype = ctypes.c_int
-        lib.ul_ecat_master_shutdown.restype = ctypes.c_int
-        lib.ul_ecat_scan_network.restype = ctypes.c_int
+        from ecat_ctypes import UlEcatMasterSettings, UlEcatMasterSlavesT, bind_master_api
+        bind_master_api(lib)
 
         mac = _read_mac(VETH0)
-        cfg = MasterSettings()
+        cfg = UlEcatMasterSettings()
         cfg.iface_name = VETH0.encode("utf-8")
         cfg.dst_mac = (ctypes.c_uint8 * 6)(0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF)
         cfg.src_mac = (ctypes.c_uint8 * 6)(*mac)
@@ -125,24 +113,8 @@ def main() -> int:
         finally:
             lib.ul_ecat_master_shutdown()
 
-        lib.ul_ecat_get_master_slaves.restype = ctypes.c_void_p
         dbp = lib.ul_ecat_get_master_slaves()
-
-        class Slave(ctypes.Structure):
-            _fields_ = [
-                ("station_address", ctypes.c_uint16),
-                ("state", ctypes.c_int),
-                ("vendor_id", ctypes.c_uint32),
-                ("product_code", ctypes.c_uint32),
-                ("revision_no", ctypes.c_uint32),
-                ("serial_no", ctypes.c_uint32),
-                ("device_name", ctypes.c_char * 128),
-            ]
-
-        class SlavesDb(ctypes.Structure):
-            _fields_ = [("slaves", Slave * 16), ("slave_count", ctypes.c_int)]
-
-        db = ctypes.cast(dbp, ctypes.POINTER(SlavesDb)).contents
+        db = dbp.contents
         print("--- result ---", flush=True)
         print(f"slave_count={db.slave_count}", flush=True)
         ok = db.slave_count >= 1 and db.slaves[0].vendor_id == EXP_VENDOR and db.slaves[0].product_code == EXP_PRODUCT

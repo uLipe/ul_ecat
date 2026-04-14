@@ -82,9 +82,9 @@ int ul_ecat_request_slave_state_mailbox(int slave_index, ul_ecat_slave_state_t s
 int ul_ecat_poll_slave_state(int slave_index, ul_ecat_slave_state_t desired_state, int timeout_ms);
 
 typedef enum {
-    DC_EVENT_INIT = 0,
-    DC_EVENT_SYNC,
-    DC_EVENT_ERROR
+    UL_ECAT_DC_EVENT_INIT = 0,
+    UL_ECAT_DC_EVENT_SYNC,
+    UL_ECAT_DC_EVENT_ERROR
 } ul_ecat_dc_event_t;
 
 typedef struct {

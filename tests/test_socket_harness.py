@@ -11,8 +11,8 @@ import time
 
 import pytest
 
-EXP_VENDOR = 0x00000002
-EXP_PRODUCT = 0x1C213052
+sys.path.insert(0, os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")), "scripts"))
+from ecat_wire import DEFAULT_VENDOR as EXP_VENDOR, DEFAULT_PRODUCT as EXP_PRODUCT
 
 
 def _root() -> str:

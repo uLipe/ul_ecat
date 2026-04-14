@@ -9,6 +9,7 @@
 
 #include "ul_ecat_master.h"
 #include "ul_ecat_al.h"
+#include "ul_ecat_esc_regs.h"
 #include "ul_ecat_frame.h"
 #include "ul_ecat_osal.h"
 #include "ul_ecat_transport.h"
@@ -29,11 +30,12 @@ static int g_scan_trace;
 #define Q_MAX 32
 #define DGRAM_BUF 512
 
-/* ESC register offsets (16-bit ADO, byte-addressed). */
-#define ESC_REG_STADR  0x0010u
-#define ESC_REG_ALCTL  0x0120u
-#define ESC_REG_ALSTAT 0x0130u
-#define ESC_REG_DCSYS0 0x0910u
+/* Short aliases for readability (from ul_ecat_esc_regs.h). */
+#define ESC_REG_STADR   UL_ECAT_ESC_REG_STADR
+#define ESC_REG_ALCTL   UL_ECAT_ESC_REG_ALCTL
+#define ESC_REG_ALSTAT  UL_ECAT_ESC_REG_ALSTAT
+#define ESC_REG_DCSYS0  UL_ECAT_ESC_REG_DCSYS0
+#define ESC_REG_DCSYSOFS UL_ECAT_ESC_REG_DCSYSOFS
 
 static int g_sockfd = -1;
 static unsigned char g_dst_mac[6];
@@ -79,10 +81,13 @@ void ul_ecat_mac_broadcast(unsigned char dst[6])
 static void dc_init(void);
 static void dc_cycle(void);
 static void handle_dc_response(uint64_t slave_time_ns);
-extern void ul_ecat_eventloop_post_dc_event(const ul_ecat_dc_event_info_t *);
-extern void ul_ecat_eventloop_post_frame_event(const struct ul_ecat_frame *, ssize_t);
+static void ul_ecat_eventloop_post_dc_event(const ul_ecat_dc_event_info_t *);
+static void ul_ecat_eventloop_post_frame_event(const struct ul_ecat_frame *, ssize_t);
 
-/* --- ESI merge (from previous implementation, English comments) --- */
+static int fprd_blocking(uint16_t station, uint16_t ado, void *out, uint16_t len,
+                         uint16_t *wkc_out, int timeout_ms);
+static int fpwr_blocking(uint16_t adp, uint16_t ado, const void *data, uint16_t len,
+                         uint16_t *wkc_out, int timeout_ms);
 
 typedef struct {
     ul_ecat_esi_device_t devs[64];
@@ -304,20 +309,9 @@ static int exchange_ec_payload(const uint8_t *ec_payload, size_t ec_len,
 
 static int read_al_status_blocking(uint16_t station, uint16_t *alstat_out, int timeout_ms)
 {
-    uint8_t dg[64];
-    int enc = ul_ecat_dgram_encode(dg, sizeof(dg), UL_ECAT_CMD_FPRD, 0,
-                                   station, ESC_REG_ALSTAT, 2u, 0u, 0u, NULL);
-    if (enc < 0) {
-        return -1;
-    }
-    uint8_t resp[512];
-    size_t rlen = 0;
-    if (exchange_ec_payload(dg, (size_t)enc, resp, &rlen, sizeof(resp), timeout_ms) != 0) {
-        return -1;
-    }
-    uint8_t raw[4];
+    uint8_t raw[2];
     uint16_t wkc = 0;
-    if (ul_ecat_dgram_parse(resp, rlen, 0, NULL, NULL, NULL, NULL, NULL, NULL, &wkc, raw, sizeof(raw)) != 0) {
+    if (fprd_blocking(station, ESC_REG_ALSTAT, raw, 2u, &wkc, timeout_ms) != 0) {
         return -1;
     }
     if (wkc < 1u) {
@@ -331,19 +325,8 @@ static int write_al_control_blocking(uint16_t station, uint16_t req_bits, int ti
 {
     uint8_t buf[2];
     w16_le_buf(buf, req_bits);
-    uint8_t dg[64];
-    int enc = ul_ecat_dgram_encode(dg, sizeof(dg), UL_ECAT_CMD_FPWR, 0,
-                                   station, ESC_REG_ALCTL, 2u, 0u, 0u, buf);
-    if (enc < 0) {
-        return -1;
-    }
-    uint8_t resp[512];
-    size_t rlen = 0;
-    if (exchange_ec_payload(dg, (size_t)enc, resp, &rlen, sizeof(resp), timeout_ms) != 0) {
-        return -1;
-    }
     uint16_t wkc = 0;
-    if (ul_ecat_dgram_parse(resp, rlen, 0, NULL, NULL, NULL, NULL, NULL, NULL, &wkc, NULL, 0) != 0) {
+    if (fpwr_blocking(station, ESC_REG_ALCTL, buf, 2u, &wkc, timeout_ms) != 0) {
         return -1;
     }
     if (wkc < 1u) {
@@ -576,16 +559,16 @@ int ul_ecat_scan_network(void)
         s->state = UL_ECAT_SLAVE_STATE_INIT;
         uint32_t vid = 0, pid = 0, rev = 0, ser = 0;
         uint8_t tmp[4];
-        if (fprd_blocking(station, 0x0012u, tmp, 4u, &wkc, 200) == 0 && wkc >= 1u) {
+        if (fprd_blocking(station, UL_ECAT_ESC_REG_VENDOR, tmp, 4u, &wkc, 200) == 0 && wkc >= 1u) {
             vid = (uint32_t)tmp[0] | ((uint32_t)tmp[1] << 8) | ((uint32_t)tmp[2] << 16) | ((uint32_t)tmp[3] << 24);
         }
-        if (fprd_blocking(station, 0x0016u, tmp, 4u, &wkc, 200) == 0 && wkc >= 1u) {
+        if (fprd_blocking(station, UL_ECAT_ESC_REG_PRODUCT, tmp, 4u, &wkc, 200) == 0 && wkc >= 1u) {
             pid = (uint32_t)tmp[0] | ((uint32_t)tmp[1] << 8) | ((uint32_t)tmp[2] << 16) | ((uint32_t)tmp[3] << 24);
         }
-        if (fprd_blocking(station, 0x001Au, tmp, 4u, &wkc, 200) == 0 && wkc >= 1u) {
+        if (fprd_blocking(station, UL_ECAT_ESC_REG_REV, tmp, 4u, &wkc, 200) == 0 && wkc >= 1u) {
             rev = (uint32_t)tmp[0] | ((uint32_t)tmp[1] << 8) | ((uint32_t)tmp[2] << 16) | ((uint32_t)tmp[3] << 24);
         }
-        if (fprd_blocking(station, 0x001Eu, tmp, 4u, &wkc, 200) == 0 && wkc >= 1u) {
+        if (fprd_blocking(station, UL_ECAT_ESC_REG_SERIAL, tmp, 4u, &wkc, 200) == 0 && wkc >= 1u) {
             ser = (uint32_t)tmp[0] | ((uint32_t)tmp[1] << 8) | ((uint32_t)tmp[2] << 16) | ((uint32_t)tmp[3] << 24);
         }
         s->vendor_id = vid;
@@ -615,7 +598,7 @@ static void dc_init(void)
     g_dc_error_code = 0;
     printf("DC: transition to INIT\n");
     ul_ecat_dc_event_info_t ev;
-    ev.event = DC_EVENT_INIT;
+    ev.event = UL_ECAT_DC_EVENT_INIT;
     ev.offset_ns = 0;
     ev.error_code = 0;
     ul_ecat_eventloop_post_dc_event(&ev);
@@ -640,7 +623,7 @@ static void dc_cycle(void)
             g_dc_error_code = 2;
             g_dc_state = 3;
             ul_ecat_dc_event_info_t e;
-            e.event = DC_EVENT_ERROR;
+            e.event = UL_ECAT_DC_EVENT_ERROR;
             e.offset_ns = g_dc_offset;
             e.error_code = g_dc_error_code;
             ul_ecat_eventloop_post_dc_event(&e);
@@ -659,15 +642,15 @@ static void handle_dc_response(uint64_t slave_time_ns)
         g_dc_error_code = 1;
         g_dc_state = 3;
         ul_ecat_dc_event_info_t e;
-        e.event = DC_EVENT_ERROR;
+        e.event = UL_ECAT_DC_EVENT_ERROR;
         e.offset_ns = off;
         e.error_code = g_dc_error_code;
         ul_ecat_eventloop_post_dc_event(&e);
     } else {
         int32_t corr = (int32_t)(-off);
-        ul_ecat_queue_fpwr(0x0000u, 0x0920u, &corr, 4u);
+        ul_ecat_queue_fpwr(0x0000u, ESC_REG_DCSYSOFS, &corr, 4u);
         ul_ecat_dc_event_info_t e;
-        e.event = DC_EVENT_SYNC;
+        e.event = UL_ECAT_DC_EVENT_SYNC;
         e.offset_ns = off;
         e.error_code = 0;
         ul_ecat_eventloop_post_dc_event(&e);
@@ -948,7 +931,7 @@ static void post_evt(const ecat_event_t *evt)
     ul_ecat_osal_evt_unlock();
 }
 
-void ul_ecat_eventloop_post_dc_event(const ul_ecat_dc_event_info_t *dcinfo)
+static void ul_ecat_eventloop_post_dc_event(const ul_ecat_dc_event_info_t *dcinfo)
 {
     ecat_event_t e;
     e.type = EV_DC;
@@ -956,7 +939,7 @@ void ul_ecat_eventloop_post_dc_event(const ul_ecat_dc_event_info_t *dcinfo)
     post_evt(&e);
 }
 
-void ul_ecat_eventloop_post_frame_event(const struct ul_ecat_frame *fr, ssize_t flen)
+static void ul_ecat_eventloop_post_frame_event(const struct ul_ecat_frame *fr, ssize_t flen)
 {
     ecat_event_t e;
     e.type = EV_FRAME;

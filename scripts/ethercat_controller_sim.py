@@ -13,106 +13,24 @@ import socket
 import struct
 import sys
 from dataclasses import dataclass
-from typing import Optional
 
-ETH_P_ECAT = 0x88A4
-
-UL_ECAT_CMD_APWR = 0x02
-UL_ECAT_CMD_FPRD = 0x04
-
-UL_ECAT_PDU_HDR_LEN = 4
-UL_ECAT_DGRAM_HDR_LEN = 10
-UL_ECAT_DGRAM_WKC_LEN = 2
-
-ESC_REG_STADR = 0x0010
-ESC_REG_VENDOR = 0x0012
-ESC_REG_PRODUCT = 0x0016
-ESC_REG_REV = 0x001A
-ESC_REG_SERIAL = 0x001E
-
-
-def _w16_le(v: int) -> bytes:
-    return bytes([v & 0xFF, (v >> 8) & 0xFF])
-
-
-def _pack_len_irq(data_len: int, irq: int = 0) -> int:
-    return data_len & 0x7FF
-
-
-def dgram_encode(
-    cmd: int,
-    index: int,
-    adp: int,
-    ado: int,
-    data_len: int,
-    irq: int,
-    wkc_out: int,
-    data: Optional[bytes],
-) -> bytes:
-    out = bytearray()
-    out.append(cmd & 0xFF)
-    out.append(index & 0xFF)
-    out.extend(_w16_le(adp))
-    out.extend(_w16_le(ado))
-    out.extend(_w16_le(_pack_len_irq(data_len, irq)))
-    out.extend(_w16_le(irq))
-    if data_len > 0:
-        if data is not None:
-            out.extend(data[:data_len].ljust(data_len, b"\0"))
-        else:
-            out.extend(b"\0" * data_len)
-    out.extend(_w16_le(wkc_out))
-    return bytes(out)
-
-
-def build_eth_frame(dst: bytes, src: bytes, ec_payload: bytes) -> bytes:
-    ec_len_field = 2 + len(ec_payload)
-    frame = bytearray()
-    frame.extend(dst)
-    frame.extend(src)
-    frame.extend(struct.pack("!H", ETH_P_ECAT))
-    frame.extend(_w16_le(ec_len_field))
-    frame.extend(_w16_le(0))
-    frame.extend(ec_payload)
-    return bytes(frame)
-
-
-def parse_eth_ec_payload(frame: bytes) -> tuple[bytes, bytes]:
-    """Return (ec_datagram_area, master_src_mac_from_rx_frame)."""
-    if len(frame) < 18:
-        raise ValueError("frame too short")
-    et = (frame[12] << 8) | frame[13]
-    if et != ETH_P_ECAT:
-        raise ValueError("not EtherCAT ethertype")
-    ec_len = struct.unpack_from("<H", frame, 14)[0]
-    if ec_len < 2:
-        raise ValueError("bad ec_len")
-    dgram_area_len = ec_len - 2
-    if len(frame) < 18 + dgram_area_len:
-        raise ValueError("truncated PDU")
-    pdu = frame[18 : 18 + dgram_area_len]
-    master_sa = frame[6:12]
-    return pdu, master_sa
-
-
-def parse_first_datagram(pdu: bytes) -> tuple[int, int, int, int, int, bytes, int]:
-    if len(pdu) < UL_ECAT_DGRAM_HDR_LEN + UL_ECAT_DGRAM_WKC_LEN:
-        raise ValueError("pdu too short")
-    cmd = pdu[0]
-    idx = pdu[1]
-    adp = struct.unpack_from("<H", pdu, 2)[0]
-    ado = struct.unpack_from("<H", pdu, 4)[0]
-    dlen = struct.unpack_from("<H", pdu, 6)[0] & 0x7FF
-    irq = struct.unpack_from("<H", pdu, 8)[0]
-    if len(pdu) < UL_ECAT_DGRAM_HDR_LEN + dlen + UL_ECAT_DGRAM_WKC_LEN:
-        raise ValueError("bad dgram")
-    data = pdu[UL_ECAT_DGRAM_HDR_LEN : UL_ECAT_DGRAM_HDR_LEN + dlen]
-    wkc = struct.unpack_from("<H", pdu, UL_ECAT_DGRAM_HDR_LEN + dlen)[0]
-    return cmd, idx, adp, ado, dlen, irq, data, wkc
-
-
-def u32_le(b: bytes) -> int:
-    return struct.unpack("<I", b[:4])[0]
+from ecat_wire import (
+    UL_ECAT_CMD_APWR,
+    UL_ECAT_CMD_FPRD,
+    ESC_REG_STADR,
+    ESC_REG_VENDOR,
+    ESC_REG_PRODUCT,
+    ESC_REG_REV,
+    ESC_REG_SERIAL,
+)
+from ecat_frame import (
+    w16_le as _w16_le,
+    r32_le as _r32_le,
+    dgram_encode,
+    build_eth_frame,
+    parse_eth_ec_payload,
+    parse_first_datagram,
+)
 
 
 @dataclass
@@ -187,7 +105,7 @@ def run_identity_scan(
                 raise RuntimeError(f"WKC {wkc} on {step}")
             if i == 0:
                 continue
-            val = u32_le(data)
+            val = _r32_le(data)
             if i == 1:
                 vendor = val
             elif i == 2:

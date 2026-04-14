@@ -20,4 +20,9 @@
 /** AL Event register (4 bytes, ETG). */
 #define UL_ECAT_ESC_REG_ALEVENT 0x0220u
 
+/** DC System Time (8 bytes, read from first slave). */
+#define UL_ECAT_ESC_REG_DCSYS0  0x0910u
+/** DC System Time Offset (4-byte signed correction written by master). */
+#define UL_ECAT_ESC_REG_DCSYSOFS 0x0920u
+
 #endif /* UL_ECAT_ESC_REGS_H */
