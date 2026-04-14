@@ -8,6 +8,7 @@
 #include "ul_ecat_al.h"
 #include "ul_ecat_esc.h"
 #include "ul_ecat_esc_regs.h"
+#include "ul_ecat_slave_sm.h"
 
 #include <string.h>
 
@@ -78,6 +79,16 @@ void ul_ecat_slave_al_on_control_write(ul_ecat_slave_t *s)
 				(uint16_t)(cur | UL_ECAT_AL_STAT_ERR),
 				UL_ECAT_AL_ERR_INVALID_STATE_CHANGE);
 		return;
+	}
+
+	/* INIT->PREOP requires mailbox SyncManagers (SM0+SM1) to be configured. */
+	if (cur == AL_INIT && req == AL_PREOP) {
+		if (ul_ecat_sm_validate_mailbox_pair(s->esc) != 0) {
+			write_al_status(s->esc,
+					(uint16_t)(cur | UL_ECAT_AL_STAT_ERR),
+					UL_ECAT_AL_ERR_INVALID_MAILBOX_CFG);
+			return;
+		}
 	}
 
 	write_al_status(s->esc, (uint16_t)req, UL_ECAT_AL_ERR_NONE);

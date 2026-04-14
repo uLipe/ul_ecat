@@ -19,7 +19,7 @@ Reference documents: ETG.1000 (protocol), ETG.2000 (ESI), ETG.2010 (SII), ETG.22
 | Software Ethernet backend | Done | For host simulation and tests |
 | Controller abstraction + callbacks | Done | `ul_ecat_slave_controller.c`; AL Status and AL Event change callbacks |
 | Process data (PDRAM, LAN9252) | Partial | Raw buffer I/O via `set_pdram`; no PDO mapping objects |
-| SyncManager (SM0-SM3) | Not yet | Registers exist in mirror but no firmware interpretation |
+| SyncManager (SM0-SM3) | Basic | Register layout defined; SM0/SM1 mailbox config validated on INIT->PREOP transition; SM2/SM3 process data not yet validated |
 | FMMU | Not yet | Not emulated in software backend; hardware-managed on LAN9252 |
 | Mailbox protocol | Not yet | No SM0/SM1 mailbox handshake |
 | CoE / Object Dictionary | Not yet | No SDO server, no OD entries |

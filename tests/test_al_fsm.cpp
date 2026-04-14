@@ -30,6 +30,15 @@ protected:
         fpwr(station, UL_ECAT_ESC_REG_STADR, buf, 2, true);
     }
 
+    void configure_mailbox_sm() {
+        /* SM0: mailbox write (master->slave), start=0x1000, len=128, ctrl=0x26 (mbx+write), activate=1 */
+        uint8_t sm0[8] = {0x00, 0x10, 0x80, 0x00, 0x26, 0x00, 0x01, 0x00};
+        fpwr(0x1000u, UL_ECAT_ESC_REG_SM0, sm0, 8);
+        /* SM1: mailbox read (slave->master), start=0x1080, len=128, ctrl=0x22 (mbx+read), activate=1 */
+        uint8_t sm1[8] = {0x80, 0x10, 0x80, 0x00, 0x22, 0x00, 0x01, 0x00};
+        fpwr(0x1000u, UL_ECAT_ESC_REG_SM1, sm1, 8);
+    }
+
     uint16_t fpwr(uint16_t station, uint16_t ado, const uint8_t *data, uint16_t len, bool use_apwr = false) {
         uint8_t dg[512], pdu_out[512];
         size_t pdu_out_len = 0;
@@ -77,18 +86,21 @@ TEST_F(AlFsm, InitialStateIsInit) {
 }
 
 TEST_F(AlFsm, InitToPreop) {
+    configure_mailbox_sm();
     request_state(2);
     EXPECT_EQ(current_state(), 2u);
     EXPECT_FALSE(error_indicated());
 }
 
 TEST_F(AlFsm, PreopToSafeop) {
+    configure_mailbox_sm();
     request_state(2);
     request_state(4);
     EXPECT_EQ(current_state(), 4u);
 }
 
 TEST_F(AlFsm, SafeopToOp) {
+    configure_mailbox_sm();
     request_state(2);
     request_state(4);
     request_state(8);
@@ -96,6 +108,7 @@ TEST_F(AlFsm, SafeopToOp) {
 }
 
 TEST_F(AlFsm, FullForwardThenBackward) {
+    configure_mailbox_sm();
     request_state(2);
     request_state(4);
     request_state(8);
@@ -110,6 +123,7 @@ TEST_F(AlFsm, FullForwardThenBackward) {
 }
 
 TEST_F(AlFsm, AnyToInitAlwaysValid) {
+    configure_mailbox_sm();
     request_state(2);
     request_state(4);
     EXPECT_EQ(current_state(), 4u);
@@ -118,6 +132,7 @@ TEST_F(AlFsm, AnyToInitAlwaysValid) {
 }
 
 TEST_F(AlFsm, OpToInitDirectValid) {
+    configure_mailbox_sm();
     request_state(2);
     request_state(4);
     request_state(8);
@@ -141,6 +156,7 @@ TEST_F(AlFsm, InitToSafeopInvalid) {
 }
 
 TEST_F(AlFsm, PreopToOpInvalid) {
+    configure_mailbox_sm();
     request_state(2);
     request_state(8);
     EXPECT_EQ(current_state(), 2u);
@@ -165,9 +181,59 @@ TEST_F(AlFsm, AckClearsError) {
 }
 
 TEST_F(AlFsm, SameStateRequestIsNoop) {
+    configure_mailbox_sm();
     request_state(2);
     EXPECT_EQ(current_state(), 2u);
     request_state(2);
     EXPECT_EQ(current_state(), 2u);
     EXPECT_FALSE(error_indicated());
+}
+
+/* --- SyncManager-specific tests --- */
+
+TEST_F(AlFsm, InitToPreopWithoutSmFails) {
+    request_state(2);
+    EXPECT_EQ(current_state(), 1u);
+    EXPECT_TRUE(error_indicated());
+    EXPECT_EQ(status_code(), UL_ECAT_AL_ERR_INVALID_MAILBOX_CFG);
+}
+
+TEST_F(AlFsm, InitToPreopWithSm0OnlyFails) {
+    uint8_t sm0[8] = {0x00, 0x10, 0x80, 0x00, 0x26, 0x00, 0x01, 0x00};
+    fpwr(0x1000u, UL_ECAT_ESC_REG_SM0, sm0, 8);
+    request_state(2);
+    EXPECT_EQ(current_state(), 1u);
+    EXPECT_TRUE(error_indicated());
+    EXPECT_EQ(status_code(), UL_ECAT_AL_ERR_INVALID_MAILBOX_CFG);
+}
+
+TEST_F(AlFsm, InitToPreopWithZeroLengthSmFails) {
+    uint8_t sm0[8] = {0x00, 0x10, 0x00, 0x00, 0x26, 0x00, 0x01, 0x00};  /* len=0 */
+    fpwr(0x1000u, UL_ECAT_ESC_REG_SM0, sm0, 8);
+    uint8_t sm1[8] = {0x80, 0x10, 0x80, 0x00, 0x22, 0x00, 0x01, 0x00};
+    fpwr(0x1000u, UL_ECAT_ESC_REG_SM1, sm1, 8);
+    request_state(2);
+    EXPECT_EQ(current_state(), 1u);
+    EXPECT_TRUE(error_indicated());
+    EXPECT_EQ(status_code(), UL_ECAT_AL_ERR_INVALID_MAILBOX_CFG);
+}
+
+TEST_F(AlFsm, SmConfigReadBackViaPdu) {
+    configure_mailbox_sm();
+    /* Read SM0 back via FPRD */
+    uint8_t dg[512], pdu_out[512];
+    size_t pdu_out_len = 0;
+    int enc = ul_ecat_dgram_encode(dg, sizeof(dg), UL_ECAT_CMD_FPRD, 0, 0x1000u, UL_ECAT_ESC_REG_SM0, 8u, 0, 0, nullptr);
+    ASSERT_GT(enc, 0);
+    ASSERT_EQ(ul_ecat_slave_process_pdu(&slave, dg, (size_t)enc, pdu_out, sizeof(pdu_out), &pdu_out_len), 0);
+    uint16_t wkc = 0;
+    uint8_t raw[8];
+    ASSERT_EQ(ul_ecat_dgram_parse(pdu_out, pdu_out_len, 0, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &wkc, raw, sizeof(raw)), 0);
+    EXPECT_GE(wkc, 1u);
+    uint16_t start = (uint16_t)raw[0] | ((uint16_t)raw[1] << 8);
+    uint16_t length = (uint16_t)raw[2] | ((uint16_t)raw[3] << 8);
+    EXPECT_EQ(start, 0x1000u);
+    EXPECT_EQ(length, 128u);
+    EXPECT_EQ(raw[4], 0x26u);  /* control: mailbox + write direction */
+    EXPECT_EQ(raw[6], 0x01u);  /* activate */
 }

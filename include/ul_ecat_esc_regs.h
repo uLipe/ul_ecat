@@ -22,6 +22,28 @@
 /** AL Event register (4 bytes, ETG). */
 #define UL_ECAT_ESC_REG_ALEVENT   0x0220u
 
+/* SyncManager registers (8 bytes each, ETG.1000 Table 23). */
+#define UL_ECAT_ESC_REG_SM0     0x0800u
+#define UL_ECAT_ESC_REG_SM1     0x0808u
+#define UL_ECAT_ESC_REG_SM2     0x0810u
+#define UL_ECAT_ESC_REG_SM3     0x0818u
+#define UL_ECAT_ESC_SM_COUNT    4u
+#define UL_ECAT_ESC_SM_SIZE     8u
+
+/* Offsets within each SM register block. */
+#define UL_ECAT_SM_OFS_START_ADDR  0u  /* 2 bytes: physical start address */
+#define UL_ECAT_SM_OFS_LENGTH      2u  /* 2 bytes: buffer length */
+#define UL_ECAT_SM_OFS_CONTROL     4u  /* 1 byte: mode + direction */
+#define UL_ECAT_SM_OFS_STATUS      5u  /* 1 byte */
+#define UL_ECAT_SM_OFS_ACTIVATE    6u  /* 1 byte: bit 0 = enable */
+#define UL_ECAT_SM_OFS_PDI_CTRL    7u  /* 1 byte */
+
+/* SM Control register bits. */
+#define UL_ECAT_SM_CTRL_MODE_MASK  0x03u
+#define UL_ECAT_SM_CTRL_MODE_BUF   0x00u  /* 3-buffer (process data) */
+#define UL_ECAT_SM_CTRL_MODE_MBX   0x02u  /* mailbox (handshake) */
+#define UL_ECAT_SM_CTRL_DIR_MASK   0x04u  /* bit 2: 0=read (slave->master), 1=write (master->slave) */
+
 /** DC System Time (8 bytes, read from first slave). */
 #define UL_ECAT_ESC_REG_DCSYS0  0x0910u
 /** DC System Time Offset (4-byte signed correction written by master). */

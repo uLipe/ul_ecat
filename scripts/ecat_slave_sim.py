@@ -39,8 +39,14 @@ from ecat_wire import (
     ESC_REG_PRODUCT,
     ESC_REG_REV,
     ESC_REG_SERIAL,
+    ESC_REG_SM0,
+    ESC_REG_SM1,
+    SM_OFS_LENGTH,
+    SM_OFS_CONTROL,
+    SM_OFS_ACTIVATE,
     AL_VALID_TRANSITIONS,
     AL_ERR_INVALID_STATE_CHANGE,
+    AL_ERR_INVALID_MAILBOX_CFG,
     AL_ERR_BOOTSTRAP_NOT_SUPPORTED,
     AL_STATE_BOOT,
 )
@@ -67,10 +73,20 @@ class ServoSim:
         self.al_state = 1  # INIT
         self.al_error = False
         self.al_status_code = 0
+        self.esc = bytearray(4096)
         self.vendor = _env_u32("UL_ECAT_SIM_VENDOR_ID", DEFAULT_VENDOR)
         self.product = _env_u32("UL_ECAT_SIM_PRODUCT_CODE", DEFAULT_PRODUCT)
         self.revision = _env_u32("UL_ECAT_SIM_REVISION", DEFAULT_REVISION)
         self.serial = _env_u32("UL_ECAT_SIM_SERIAL", DEFAULT_SERIAL)
+
+    def _sm_mailbox_valid(self) -> bool:
+        for base in (ESC_REG_SM0, ESC_REG_SM1):
+            length = self.esc[base + SM_OFS_LENGTH] | (self.esc[base + SM_OFS_LENGTH + 1] << 8)
+            ctrl = self.esc[base + SM_OFS_CONTROL]
+            act = self.esc[base + SM_OFS_ACTIVATE]
+            if length == 0 or (ctrl & 0x03) != 0x02 or (act & 0x01) == 0:
+                return False
+        return True
 
     def _process_al_control(self, val: int) -> None:
         req = val & 0x000F
@@ -87,6 +103,11 @@ class ServoSim:
             self.al_status_code = AL_ERR_BOOTSTRAP_NOT_SUPPORTED
             return
         if req == 1 or (self.al_state, req) in AL_VALID_TRANSITIONS:
+            if self.al_state == 1 and req == 2:
+                if not self._sm_mailbox_valid():
+                    self.al_error = True
+                    self.al_status_code = AL_ERR_INVALID_MAILBOX_CFG
+                    return
             self.al_state = req
             self.al_error = False
             self.al_status_code = 0
@@ -99,8 +120,16 @@ class ServoSim:
 
         if cmd == UL_ECAT_CMD_APWR and ado == ESC_REG_STADR and dlen >= 2:
             self.station_adr = le16(bytes(data), 0)
-        elif cmd == UL_ECAT_CMD_FPWR and ado == ESC_REG_ALCTL and dlen >= 2:
-            self._process_al_control(le16(bytes(data), 0))
+            self.esc[ado:ado + dlen] = data[:dlen]
+        elif cmd == UL_ECAT_CMD_FPWR:
+            if self.station_adr is not None and adp != self.station_adr:
+                wkc_out = 0
+            else:
+                end = ado + dlen
+                if end <= len(self.esc):
+                    self.esc[ado:end] = data[:dlen]
+                if ado <= ESC_REG_ALCTL < ado + dlen and dlen >= 2:
+                    self._process_al_control(le16(bytes(data), 0))
         elif cmd == UL_ECAT_CMD_FPRD:
             if self.station_adr is not None and adp != self.station_adr:
                 wkc_out = 0
