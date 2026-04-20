@@ -27,11 +27,15 @@ static constexpr uint16_t SM1_START = 0x0D80u;
 #define COE_SDO_RESP     0x03u
 #define CCS_UPLOAD_INIT  (2u << 5)
 #define CCS_DOWNLOAD_INIT (1u << 5)
+#define CCS_UPLOAD_SEG    (3u << 5)
 #define SCS_UPLOAD_RESP  (2u << 5)
+#define SCS_UPLOAD_SEG   (0u << 5)
 #define SCS_DOWNLOAD_RESP (3u << 5)
 #define SDO_CMD_ABORT    (4u << 5)
 #define SDO_BIT_EXP      0x02u
 #define SDO_BIT_SIZE_IND 0x01u
+#define SDO_BIT_TOGGLE   0x10u
+#define SDO_BIT_LAST_SEG 0x01u
 
 class Coe : public ::testing::Test {
 protected:
@@ -184,6 +188,56 @@ TEST_F(Coe, DownloadToReadOnlyAborts0x06010002) {
     uint32_t code = (uint32_t)rep[12] | ((uint32_t)rep[13] << 8) |
                     ((uint32_t)rep[14] << 16) | ((uint32_t)rep[15] << 24);
     EXPECT_EQ(code, 0x06010002u);
+}
+
+/* --- Segmented upload (4d) --- */
+
+TEST_F(Coe, UploadDeviceNameSegmentedReassembles) {
+    /* 0x1008 device name is 32 bytes => init upload responds segmented (size=32),
+     * followed by 5 segment requests (4*7 + 4 = 32). */
+    auto rep = sdo_round_trip(build_sdo_frame(CCS_UPLOAD_INIT, 0x1008, 0x00, 0u));
+    ASSERT_EQ(rep[8] & 0xE0u, SCS_UPLOAD_RESP);
+    EXPECT_EQ(rep[8] & SDO_BIT_EXP, 0u) << "expected segmented init";
+    EXPECT_NE(rep[8] & SDO_BIT_SIZE_IND, 0u);
+    uint32_t total = (uint32_t)rep[12] | ((uint32_t)rep[13] << 8) |
+                     ((uint32_t)rep[14] << 16) | ((uint32_t)rep[15] << 24);
+    EXPECT_EQ(total, 32u);
+
+    std::vector<uint8_t> assembled;
+    uint8_t toggle = 0u;
+    int segments = 0;
+    while (true) {
+        ASSERT_LT(segments, 10) << "too many segments";
+        auto seg_rep = sdo_round_trip(build_sdo_frame((uint8_t)(CCS_UPLOAD_SEG | toggle), 0, 0, 0u));
+        ASSERT_EQ(seg_rep[8] & 0xE0u, SCS_UPLOAD_SEG);
+        EXPECT_EQ(seg_rep[8] & SDO_BIT_TOGGLE, toggle);
+        uint8_t n_unused = (uint8_t)((seg_rep[8] >> 1) & 0x07u);
+        uint8_t chunk = (uint8_t)(7u - n_unused);
+        for (uint8_t i = 0; i < chunk; i++) {
+            assembled.push_back(seg_rep[9 + i]);
+        }
+        bool last = (seg_rep[8] & SDO_BIT_LAST_SEG) != 0u;
+        toggle ^= SDO_BIT_TOGGLE;
+        segments++;
+        if (last) break;
+    }
+    EXPECT_EQ(assembled.size(), 32u);
+    /* Default device name is "ul_ecat slave" NUL-padded. */
+    std::string s(reinterpret_cast<char *>(assembled.data()));
+    EXPECT_EQ(s, "ul_ecat slave");
+}
+
+TEST_F(Coe, UploadSegmentWithWrongToggleAborts) {
+    /* Init segmented upload, then send a segment with the wrong toggle. */
+    auto init_rep = sdo_round_trip(build_sdo_frame(CCS_UPLOAD_INIT, 0x1008, 0x00, 0u));
+    ASSERT_EQ(init_rep[8] & 0xE0u, SCS_UPLOAD_RESP);
+    EXPECT_EQ(init_rep[8] & SDO_BIT_EXP, 0u);
+    /* First segment should be toggle=0; send toggle=1 instead. */
+    auto bad = sdo_round_trip(build_sdo_frame((uint8_t)(CCS_UPLOAD_SEG | SDO_BIT_TOGGLE), 0, 0, 0u));
+    EXPECT_EQ(bad[8] & 0xE0u, SDO_CMD_ABORT);
+    uint32_t code = (uint32_t)bad[12] | ((uint32_t)bad[13] << 8) |
+                    ((uint32_t)bad[14] << 16) | ((uint32_t)bad[15] << 24);
+    EXPECT_EQ(code, 0x05030000u);  /* toggle bit not alternated */
 }
 
 TEST_F(Coe, DownloadThenUploadRoundtripOnRwEntry) {

@@ -15,6 +15,15 @@
 #define SDO_HDR_LEN  8u
 #define COE_FRAME_HDR_TOTAL (MBX_HDR_LEN + COE_HDR_LEN + SDO_HDR_LEN)
 
+/* Active segmented-upload transfer state. The slave handles one transfer at a
+ * time; a new init request implicitly cancels any in-progress one. */
+static struct {
+    int                       active;
+    const ul_ecat_od_entry_t *entry;
+    uint16_t                  offset;
+    uint8_t                   toggle_expected;  /* next request toggle bit (0 or UL_ECAT_SDO_BIT_TOGGLE) */
+} g_upload;
+
 static uint16_t r16le(const uint8_t *p) { return (uint16_t)p[0] | ((uint16_t)p[1] << 8); }
 static void w16le(uint8_t *p, uint16_t v)
 {
@@ -73,15 +82,15 @@ static size_t handle_upload_init(const uint8_t *req, uint8_t *reply, size_t repl
         uint32_t code = ul_ecat_od_index_exists(index)
                             ? UL_ECAT_SDO_ABORT_BAD_SUBINDEX
                             : UL_ECAT_SDO_ABORT_OBJECT_GONE;
+        g_upload.active = 0;
         return build_abort(req, reply, reply_cap, index, subindex, code);
     }
     if ((entry->flags & UL_ECAT_OD_FLAG_R) == 0u) {
+        g_upload.active = 0;
         return build_abort(req, reply, reply_cap, index, subindex, UL_ECAT_SDO_ABORT_READ_WO);
     }
-
-    /* Expedited only in 4c: payload must fit 4 bytes. Larger objects are
-     * answered with abort GENERAL until 4d adds segmented upload. */
-    if (entry->length == 0u || entry->length > 4u) {
+    if (entry->length == 0u) {
+        g_upload.active = 0;
         return build_abort(req, reply, reply_cap, index, subindex, UL_ECAT_SDO_ABORT_GENERAL);
     }
     if (reply_cap < COE_FRAME_HDR_TOTAL) {
@@ -90,16 +99,71 @@ static size_t handle_upload_init(const uint8_t *req, uint8_t *reply, size_t repl
 
     build_reply_headers(req, reply, SDO_HDR_LEN);
     uint8_t *sdo = reply + MBX_HDR_LEN + COE_HDR_LEN;
-
-    uint8_t n = (uint8_t)((4u - entry->length) & 0x03u);  /* unused bytes count */
-    sdo[0] = UL_ECAT_SDO_SCS_UPLOAD_RESP_INIT |
-             UL_ECAT_SDO_BIT_EXPEDITED |
-             UL_ECAT_SDO_BIT_SIZE_IND |
-             (uint8_t)(n << 2);
     w16le(sdo + 1, index);
     sdo[3] = subindex;
     sdo[4] = sdo[5] = sdo[6] = sdo[7] = 0u;
-    (void)ul_ecat_od_read(entry, sdo + 4, entry->length);
+
+    if (entry->length <= 4u) {
+        /* Expedited init upload response: payload in bytes 4..7. */
+        g_upload.active = 0;
+        uint8_t n = (uint8_t)((4u - entry->length) & 0x03u);
+        sdo[0] = UL_ECAT_SDO_SCS_UPLOAD_RESP_INIT |
+                 UL_ECAT_SDO_BIT_EXPEDITED |
+                 UL_ECAT_SDO_BIT_SIZE_IND |
+                 (uint8_t)(n << 2);
+        (void)ul_ecat_od_read(entry, sdo + 4, entry->length);
+    } else {
+        /* Segmented init upload response: total length in bytes 4..7. */
+        sdo[0] = UL_ECAT_SDO_SCS_UPLOAD_RESP_INIT | UL_ECAT_SDO_BIT_SIZE_IND;
+        sdo[4] = (uint8_t)(entry->length & 0xFFu);
+        sdo[5] = (uint8_t)((entry->length >> 8) & 0xFFu);
+        sdo[6] = sdo[7] = 0u;
+        g_upload.active = 1;
+        g_upload.entry = entry;
+        g_upload.offset = 0u;
+        g_upload.toggle_expected = 0u;  /* first segment carries toggle=0 */
+    }
+    return COE_FRAME_HDR_TOTAL;
+}
+
+static size_t handle_upload_segment(const uint8_t *req, uint8_t *reply, size_t reply_cap,
+                                    uint8_t cmd_byte)
+{
+    if (!g_upload.active || g_upload.entry == NULL) {
+        return build_abort(req, reply, reply_cap, 0u, 0u, UL_ECAT_SDO_ABORT_GENERAL);
+    }
+    uint8_t toggle_in = cmd_byte & UL_ECAT_SDO_BIT_TOGGLE;
+    if (toggle_in != g_upload.toggle_expected) {
+        g_upload.active = 0;
+        return build_abort(req, reply, reply_cap, g_upload.entry->index,
+                           g_upload.entry->subindex, UL_ECAT_SDO_ABORT_TOGGLE_BIT);
+    }
+
+    if (reply_cap < COE_FRAME_HDR_TOTAL) {
+        return 0;
+    }
+    build_reply_headers(req, reply, SDO_HDR_LEN);
+    uint8_t *sdo = reply + MBX_HDR_LEN + COE_HDR_LEN;
+
+    uint16_t remaining = (uint16_t)(g_upload.entry->length - g_upload.offset);
+    uint16_t chunk = remaining > 7u ? 7u : remaining;
+    uint8_t n_unused = (uint8_t)(7u - chunk);
+    uint8_t last = (chunk == remaining) ? UL_ECAT_SDO_BIT_LAST_SEG : 0u;
+
+    sdo[0] = UL_ECAT_SDO_SCS_UPLOAD_SEG_RESP | toggle_in |
+             (uint8_t)(n_unused << 1) | last;
+    sdo[1] = sdo[2] = sdo[3] = sdo[4] = sdo[5] = sdo[6] = sdo[7] = 0u;
+
+    if (chunk > 0u) {
+        const uint8_t *src = (const uint8_t *)g_upload.entry->storage + g_upload.offset;
+        memcpy(sdo + 1, src, chunk);
+    }
+
+    g_upload.offset = (uint16_t)(g_upload.offset + chunk);
+    g_upload.toggle_expected ^= UL_ECAT_SDO_BIT_TOGGLE;
+    if (last) {
+        g_upload.active = 0;
+    }
     return COE_FRAME_HDR_TOTAL;
 }
 
@@ -168,6 +232,13 @@ size_t ul_ecat_slave_coe_process(const uint8_t *frame, size_t len,
     }
     if (cmd_bits == UL_ECAT_SDO_CCS_DOWNLOAD_REQ_INIT) {
         return handle_download_init(frame, reply, reply_cap, sdo, index, subindex);
+    }
+    if (cmd_bits == UL_ECAT_SDO_CCS_UPLOAD_SEG_REQ) {
+        return handle_upload_segment(frame, reply, reply_cap, sdo[0]);
+    }
+    if (cmd_bits == UL_ECAT_SDO_CMD_ABORT) {
+        g_upload.active = 0;
+        return 0;  /* aborts have no response */
     }
     return build_abort(frame, reply, reply_cap, index, subindex, UL_ECAT_SDO_ABORT_GENERAL);
 }

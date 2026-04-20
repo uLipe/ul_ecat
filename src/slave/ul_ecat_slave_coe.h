@@ -33,9 +33,16 @@ extern "C" {
 /* SDO command-specifier upper bits (ccs/scs in CiA 301). */
 #define UL_ECAT_SDO_CCS_DOWNLOAD_REQ_INIT  (1u << 5)
 #define UL_ECAT_SDO_CCS_UPLOAD_REQ_INIT    (2u << 5)
+#define UL_ECAT_SDO_CCS_UPLOAD_SEG_REQ     (3u << 5)
+#define UL_ECAT_SDO_SCS_UPLOAD_SEG_RESP    (0u << 5)
 #define UL_ECAT_SDO_SCS_UPLOAD_RESP_INIT   (2u << 5)
 #define UL_ECAT_SDO_SCS_DOWNLOAD_RESP_INIT (3u << 5)
 #define UL_ECAT_SDO_CMD_ABORT              (4u << 5)
+
+/** Toggle bit (segmented requests/responses, alternating between 0 and 1). */
+#define UL_ECAT_SDO_BIT_TOGGLE   0x10u
+/** Continuation bit (segmented response): 1 = last segment, 0 = more to come. */
+#define UL_ECAT_SDO_BIT_LAST_SEG 0x01u
 
 #define UL_ECAT_SDO_BIT_EXPEDITED 0x02u
 #define UL_ECAT_SDO_BIT_SIZE_IND  0x01u
