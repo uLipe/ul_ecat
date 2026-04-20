@@ -41,9 +41,12 @@ from ecat_wire import (
     ESC_REG_SERIAL,
     ESC_REG_SM0,
     ESC_REG_SM1,
+    SM_OFS_START_ADDR,
     SM_OFS_LENGTH,
     SM_OFS_CONTROL,
+    SM_OFS_STATUS,
     SM_OFS_ACTIVATE,
+    SM_STAT_MBX_FULL,
     AL_VALID_TRANSITIONS,
     AL_ERR_INVALID_STATE_CHANGE,
     AL_ERR_INVALID_MAILBOX_CFG,
@@ -88,6 +91,82 @@ class ServoSim:
                 return False
         return True
 
+    def _sm_read(self, sm_base: int) -> tuple[int, int, int, int]:
+        start = self.esc[sm_base + SM_OFS_START_ADDR] | (self.esc[sm_base + SM_OFS_START_ADDR + 1] << 8)
+        length = self.esc[sm_base + SM_OFS_LENGTH] | (self.esc[sm_base + SM_OFS_LENGTH + 1] << 8)
+        ctrl = self.esc[sm_base + SM_OFS_CONTROL]
+        act = self.esc[sm_base + SM_OFS_ACTIVATE]
+        return start, length, ctrl, act
+
+    def _mailbox_echo_reply(self, request_frame: bytes) -> None:
+        """Default handler: copy request into SM1, increment mailbox counter nibble."""
+        start1, len1, ctrl1, act1 = self._sm_read(ESC_REG_SM1)
+        if (act1 & 0x01) == 0 or (ctrl1 & 0x03) != 0x02 or len1 == 0:
+            return
+        if start1 + len1 > len(self.esc):
+            return
+        reply = bytearray(request_frame[:len1])
+        if len(reply) < len1:
+            reply.extend(b"\0" * (len1 - len(reply)))
+        if len1 >= 6:
+            counter = (reply[5] >> 4) & 0x0F
+            counter = (counter + 1) & 0x0F
+            reply[5] = (reply[5] & 0x0F) | (counter << 4)
+        self.esc[start1:start1 + len1] = reply
+        self.esc[ESC_REG_SM1 + SM_OFS_STATUS] |= SM_STAT_MBX_FULL
+
+    def _on_sm0_write_maybe_dispatch(self, write_end: int) -> None:
+        start0, len0, ctrl0, act0 = self._sm_read(ESC_REG_SM0)
+        if (act0 & 0x01) == 0 or (ctrl0 & 0x03) != 0x02 or len0 == 0:
+            return
+        if write_end != start0 + len0:
+            return
+        self.esc[ESC_REG_SM0 + SM_OFS_STATUS] |= SM_STAT_MBX_FULL
+        frame = bytes(self.esc[start0:start0 + len0])
+        self._mailbox_echo_reply(frame)
+        self.esc[ESC_REG_SM0 + SM_OFS_STATUS] &= (~SM_STAT_MBX_FULL) & 0xFF
+
+    def _on_sm1_read_maybe_clear(self, read_end: int) -> None:
+        start1, len1, _ctrl1, act1 = self._sm_read(ESC_REG_SM1)
+        if (act1 & 0x01) == 0 or len1 == 0:
+            return
+        if read_end != start1 + len1:
+            return
+        self.esc[ESC_REG_SM1 + SM_OFS_STATUS] &= (~SM_STAT_MBX_FULL) & 0xFF
+
+    def _sm_info(self, sm_base: int) -> tuple[int, int]:
+        start = self.esc[sm_base + SM_OFS_START_ADDR] | (self.esc[sm_base + SM_OFS_START_ADDR + 1] << 8)
+        length = self.esc[sm_base + SM_OFS_LENGTH] | (self.esc[sm_base + SM_OFS_LENGTH + 1] << 8)
+        return start, length
+
+    def _maybe_handle_mailbox(self, write_ado: int, write_len: int) -> None:
+        """If the master just completed an SM0 write, build an echo reply in SM1."""
+        if not self._sm_mailbox_valid():
+            return
+        sm0_start, sm0_len = self._sm_info(ESC_REG_SM0)
+        if write_ado + write_len != sm0_start + sm0_len or write_ado < sm0_start:
+            return
+        # Mark SM0 full, then copy the SM0 content into SM1 (echo) and mark SM1 full.
+        self.esc[ESC_REG_SM0 + SM_OFS_STATUS] |= SM_STAT_MBX_FULL
+        sm1_start, sm1_len = self._sm_info(ESC_REG_SM1)
+        if sm1_start + sm1_len > len(self.esc):
+            return
+        frame = bytes(self.esc[sm0_start:sm0_start + sm0_len])
+        body_len = min(len(frame), sm1_len)
+        self.esc[sm1_start:sm1_start + body_len] = frame[:body_len]
+        if body_len < sm1_len:
+            self.esc[sm1_start + body_len:sm1_start + sm1_len] = bytes(sm1_len - body_len)
+        self.esc[ESC_REG_SM1 + SM_OFS_STATUS] |= SM_STAT_MBX_FULL
+        # Slave has consumed SM0 immediately; clear the bit.
+        self.esc[ESC_REG_SM0 + SM_OFS_STATUS] &= ~SM_STAT_MBX_FULL & 0xFF
+
+    def _maybe_clear_sm1_on_read(self, read_ado: int, read_len: int) -> None:
+        if not self._sm_mailbox_valid():
+            return
+        sm1_start, sm1_len = self._sm_info(ESC_REG_SM1)
+        if read_ado + read_len == sm1_start + sm1_len and read_ado >= sm1_start:
+            self.esc[ESC_REG_SM1 + SM_OFS_STATUS] &= ~SM_STAT_MBX_FULL & 0xFF
+
     def _process_al_control(self, val: int) -> None:
         req = val & 0x000F
         ack = val & 0x0010
@@ -130,10 +209,14 @@ class ServoSim:
                     self.esc[ado:end] = data[:dlen]
                 if ado <= ESC_REG_ALCTL < ado + dlen and dlen >= 2:
                     self._process_al_control(le16(bytes(data), 0))
+                self._on_sm0_write_maybe_dispatch(end)
         elif cmd == UL_ECAT_CMD_FPRD:
             if self.station_adr is not None and adp != self.station_adr:
                 wkc_out = 0
             else:
+                end = ado + dlen
+                if dlen > 0 and end <= len(self.esc):
+                    data[:dlen] = self.esc[ado:end]
                 if ado == ESC_REG_ALSTAT and dlen >= 2:
                     st = self.al_state & 0x0F
                     if self.al_error:
@@ -149,6 +232,7 @@ class ServoSim:
                     data[0:4] = u32_le(self.revision)
                 elif ado == ESC_REG_SERIAL and dlen >= 4:
                     data[0:4] = u32_le(self.serial)
+                self._on_sm1_read_maybe_clear(end)
 
         if self.verbose:
             cname = {UL_ECAT_CMD_APWR: "APWR", UL_ECAT_CMD_FPWR: "FPWR", UL_ECAT_CMD_FPRD: "FPRD"}.get(

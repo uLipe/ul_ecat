@@ -21,7 +21,7 @@ Reference documents: ETG.1000 (protocol), ETG.2000 (ESI), ETG.2010 (SII), ETG.22
 | Process data (PDRAM, LAN9252) | Partial | Raw buffer I/O via `set_pdram`; no PDO mapping objects |
 | SyncManager (SM0-SM3) | Basic | Register layout defined; SM0/SM1 mailbox config validated on INIT->PREOP transition; SM2/SM3 process data not yet validated |
 | FMMU | Not yet | Not emulated in software backend; hardware-managed on LAN9252 |
-| Mailbox protocol | Not yet | No SM0/SM1 mailbox handshake |
+| Mailbox protocol | Basic | SM0 full-write detection + SM_STATUS MBX_FULL toggle; SM1 reply API; counter/type header helpers; handler callback via `ul_ecat_slave_controller_set_mailbox_handler`. No fragmentation, no watchdog, no buffer re-read on failure. |
 | CoE / Object Dictionary | Not yet | No SDO server, no OD entries |
 | SII / EEPROM | Not yet | No SII content, no EEPROM read via ESC registers |
 | ESI XML | Not yet | No generated XML device description |

@@ -31,6 +31,12 @@ typedef void (*ul_ecat_slave_on_al_status_t)(uint16_t al_status_word, void *user
 typedef void (*ul_ecat_slave_on_esc_event_t)(uint32_t al_event, void *user_ctx);
 
 /**
+ * Mailbox receive handler: invoked when a full mailbox frame lands in SM0.
+ * Handler may call ul_ecat_slave_controller_mailbox_reply() to enqueue a response in SM1.
+ */
+typedef void (*ul_ecat_slave_on_mailbox_rx_t)(const uint8_t *frame, size_t len, void *user_ctx);
+
+/**
  * Optional process-data slice (ETG addresses @p 0x1000 ..); not stored in @ref ul_ecat_slave_t::esc
  * (4 KiB mirror covers only register space). Set lengths to 0 to disable.
  */
@@ -51,6 +57,8 @@ typedef struct ul_ecat_slave_controller {
     uint32_t last_al_event;
     ul_ecat_slave_on_al_status_t on_al_status;
     ul_ecat_slave_on_esc_event_t on_esc_event;
+    ul_ecat_slave_on_mailbox_rx_t on_mailbox_rx;
+    void *mailbox_ctx;
     ul_ecat_slave_controller_pdram_cfg_t pdram;
 } ul_ecat_slave_controller_t;
 
@@ -68,6 +76,22 @@ void ul_ecat_slave_controller_set_callbacks(ul_ecat_slave_controller_t *ctrl,
                                             ul_ecat_slave_on_al_status_t on_al_status,
                                             ul_ecat_slave_on_esc_event_t on_esc_event,
                                             void *user_ctx);
+
+/**
+ * Register a mailbox receive handler. @p user_ctx is passed back to @p cb;
+ * can be distinct from the one used for AL/status callbacks.
+ */
+void ul_ecat_slave_controller_set_mailbox_handler(ul_ecat_slave_controller_t *ctrl,
+                                                   ul_ecat_slave_on_mailbox_rx_t cb,
+                                                   void *user_ctx);
+
+/**
+ * Write a mailbox reply frame into SM1 (slave->master). The master subsequently
+ * retrieves it via FPRD. @return 0 on success, -1 if SM1 is not configured or
+ * the frame exceeds SM1.length.
+ */
+int ul_ecat_slave_controller_mailbox_reply(ul_ecat_slave_controller_t *ctrl,
+                                           const uint8_t *frame, size_t len);
 
 /**
  * Configure optional PDO buffers for the LAN9252 backend (ignored for software backend).

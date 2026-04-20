@@ -18,6 +18,7 @@ set(UL_ECAT_NUTTX_SLAVE_LAN9252_SOURCES
     "${UL_ECAT_ROOT}/src/common/ul_ecat_al.c"
     "${UL_ECAT_ROOT}/src/slave/ul_ecat_esc.c"
     "${UL_ECAT_ROOT}/src/slave/ul_ecat_slave_al.c"
+    "${UL_ECAT_ROOT}/src/slave/ul_ecat_slave_mailbox.c"
     "${UL_ECAT_ROOT}/src/slave/ul_ecat_slave_pdu.c"
     "${UL_ECAT_ROOT}/src/slave/ul_ecat_slave.c"
     "${UL_ECAT_ROOT}/src/slave/ul_ecat_slave_controller.c"

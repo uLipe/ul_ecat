@@ -33,6 +33,7 @@ if(CONFIG_UL_ECAT)
 
     zephyr_library_sources(${UL_ECAT_ROOT}/src/slave/ul_ecat_esc.c)
     zephyr_library_sources(${UL_ECAT_ROOT}/src/slave/ul_ecat_slave_al.c)
+    zephyr_library_sources(${UL_ECAT_ROOT}/src/slave/ul_ecat_slave_mailbox.c)
     zephyr_library_sources(${UL_ECAT_ROOT}/src/slave/ul_ecat_slave_pdu.c)
     zephyr_library_sources(${UL_ECAT_ROOT}/src/slave/ul_ecat_slave.c)
     zephyr_library_sources(${UL_ECAT_ROOT}/src/slave/ul_ecat_slave_controller.c)
