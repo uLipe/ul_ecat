@@ -111,6 +111,7 @@ if(UL_ECAT_BUILD_SLAVE)
         src/slave/ul_ecat_esc.c
         src/slave/ul_ecat_slave_al.c
         src/slave/ul_ecat_slave_mailbox.c
+        src/slave/ul_ecat_slave_od.c
         src/slave/ul_ecat_slave_pdu.c
         src/slave/ul_ecat_slave.c
         src/slave/ul_ecat_slave_controller.c
