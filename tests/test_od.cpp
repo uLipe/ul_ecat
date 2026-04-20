@@ -8,6 +8,7 @@
 
 extern "C" {
 #include "ul_ecat_slave_od.h"
+#include "ul_ecat_slave_tables.h"
 }
 
 static uint32_t g_dev_type = 0x12345678u;
@@ -128,4 +129,49 @@ TEST_F(Od, NoTableInstalled) {
     ul_ecat_od_set_table(nullptr);
     EXPECT_EQ(ul_ecat_od_lookup(0x1000, 0x00), nullptr);
     EXPECT_FALSE(ul_ecat_od_index_exists(0x1018));
+}
+
+/* --- Generated OD table (from scripts/gen_slave_data.py) --- */
+
+class GeneratedOd : public ::testing::Test {
+protected:
+    void SetUp() override { ul_ecat_od_set_table(&ul_ecat_generated_od_table); }
+    void TearDown() override { ul_ecat_od_set_table(nullptr); }
+};
+
+TEST_F(GeneratedOd, MandatoryObjectsPresent) {
+    EXPECT_NE(ul_ecat_od_lookup(0x1000, 0x00), nullptr);  /* Device Type */
+    EXPECT_NE(ul_ecat_od_lookup(0x1008, 0x00), nullptr);  /* Device Name */
+    EXPECT_NE(ul_ecat_od_lookup(0x1009, 0x00), nullptr);  /* HW Version */
+    EXPECT_NE(ul_ecat_od_lookup(0x100A, 0x00), nullptr);  /* SW Version */
+    EXPECT_NE(ul_ecat_od_lookup(0x1018, 0x00), nullptr);  /* Identity count */
+    EXPECT_NE(ul_ecat_od_lookup(0x1018, 0x01), nullptr);  /* Vendor */
+    EXPECT_NE(ul_ecat_od_lookup(0x1018, 0x04), nullptr);  /* Serial */
+}
+
+TEST_F(GeneratedOd, IdentitySubindexCountIsFour) {
+    const ul_ecat_od_entry_t *e = ul_ecat_od_lookup(0x1018, 0x00);
+    ASSERT_NE(e, nullptr);
+    uint8_t v = 0;
+    EXPECT_EQ(ul_ecat_od_read(e, &v, sizeof(v)), 1);
+    EXPECT_EQ(v, 4u);
+}
+
+TEST_F(GeneratedOd, IdentityVendorMatchesGeneratedIdentity) {
+    const ul_ecat_od_entry_t *e = ul_ecat_od_lookup(0x1018, 0x01);
+    ASSERT_NE(e, nullptr);
+    uint8_t buf[4] = {0};
+    EXPECT_EQ(ul_ecat_od_read(e, buf, sizeof(buf)), 4);
+    uint32_t got = (uint32_t)buf[0] | ((uint32_t)buf[1] << 8) |
+                   ((uint32_t)buf[2] << 16) | ((uint32_t)buf[3] << 24);
+    EXPECT_EQ(got, ul_ecat_generated_slave_identity.vendor_id);
+}
+
+TEST_F(GeneratedOd, AllEntriesAreReadOnly) {
+    for (size_t i = 0; i < ul_ecat_generated_od_table.count; i++) {
+        const ul_ecat_od_entry_t *e = &ul_ecat_generated_od_table.entries[i];
+        EXPECT_NE(e->flags & UL_ECAT_OD_FLAG_R, 0u) << "entry " << i << " not readable";
+        EXPECT_EQ(e->flags & UL_ECAT_OD_FLAG_W, 0u)
+            << "entry " << i << " unexpectedly writable";
+    }
 }
