@@ -23,6 +23,7 @@ if(UL_ECAT_BUILD_SLAVE)
     add_executable(ul_ecat_slave_tests
         test_slave.cpp
         test_al_fsm.cpp
+        test_coe.cpp
         test_mailbox.cpp
         test_od.cpp
     )
@@ -45,6 +46,7 @@ if(UL_ECAT_BUILD_SLAVE)
         lan9252_full_mock.c
         ${CMAKE_SOURCE_DIR}/src/slave/ul_ecat_esc.c
         ${CMAKE_SOURCE_DIR}/src/slave/ul_ecat_slave_al.c
+        ${CMAKE_SOURCE_DIR}/src/slave/ul_ecat_slave_coe.c
         ${CMAKE_SOURCE_DIR}/src/slave/ul_ecat_slave_mailbox.c
         ${CMAKE_SOURCE_DIR}/src/slave/ul_ecat_slave_od.c
         ${CMAKE_SOURCE_DIR}/src/slave/ul_ecat_slave_pdu.c

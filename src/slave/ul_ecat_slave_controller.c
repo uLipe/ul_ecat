@@ -8,8 +8,11 @@
 #include "ul_ecat_esc.h"
 #include "ul_ecat_esc_regs.h"
 #include "ul_ecat_slave.h"
+#include "ul_ecat_slave_coe.h"
 #include "ul_ecat_slave_mailbox.h"
+#include "ul_ecat_slave_od.h"
 #include "ul_ecat_slave_sm.h"
+#include "ul_ecat_slave_tables.h"
 
 #include <errno.h>
 #include <string.h>
@@ -44,6 +47,20 @@ static int poll_software(ul_ecat_slave_controller_t *ctrl)
     return 0;
 }
 
+/* Default mailbox handler: parse CoE/SDO and reply via SM1. */
+static void default_coe_mailbox_handler(const uint8_t *frame, size_t len, void *ctx)
+{
+    ul_ecat_slave_controller_t *c = (ul_ecat_slave_controller_t *)ctx;
+    if (c == NULL) {
+        return;
+    }
+    uint8_t reply[256];
+    size_t reply_len = ul_ecat_slave_coe_process(frame, len, reply, sizeof(reply));
+    if (reply_len > 0u) {
+        (void)ul_ecat_slave_controller_mailbox_reply(c, reply, reply_len);
+    }
+}
+
 int ul_ecat_slave_controller_init(ul_ecat_slave_controller_t *ctrl,
                                   ul_ecat_slave_t *slave,
                                   ul_ecat_slave_backend_t backend,
@@ -64,6 +81,11 @@ int ul_ecat_slave_controller_init(ul_ecat_slave_controller_t *ctrl,
             ctrl->last_al_event = read_u32_le_buf(evb);
         }
     }
+    /* Default CoE handler over the generated OD; the application can override
+     * via ul_ecat_slave_controller_set_mailbox_handler at any time. */
+    ul_ecat_od_set_table(&ul_ecat_generated_od_table);
+    ctrl->on_mailbox_rx = default_coe_mailbox_handler;
+    ctrl->mailbox_ctx = ctrl;
     return 0;
 }
 
@@ -87,8 +109,13 @@ void ul_ecat_slave_controller_set_mailbox_handler(ul_ecat_slave_controller_t *ct
     if (ctrl == NULL) {
         return;
     }
-    ctrl->on_mailbox_rx = cb;
-    ctrl->mailbox_ctx = user_ctx;
+    if (cb == NULL) {
+        ctrl->on_mailbox_rx = default_coe_mailbox_handler;
+        ctrl->mailbox_ctx = ctrl;
+    } else {
+        ctrl->on_mailbox_rx = cb;
+        ctrl->mailbox_ctx = user_ctx;
+    }
 }
 
 int ul_ecat_slave_controller_mailbox_reply(ul_ecat_slave_controller_t *ctrl,

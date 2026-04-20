@@ -78,8 +78,9 @@ void ul_ecat_slave_controller_set_callbacks(ul_ecat_slave_controller_t *ctrl,
                                             void *user_ctx);
 
 /**
- * Register a mailbox receive handler. @p user_ctx is passed back to @p cb;
- * can be distinct from the one used for AL/status callbacks.
+ * Register a mailbox receive handler. @p user_ctx is passed back to @p cb.
+ * Pass @c NULL to restore the built-in CoE/SDO handler installed by
+ * @ref ul_ecat_slave_controller_init.
  */
 void ul_ecat_slave_controller_set_mailbox_handler(ul_ecat_slave_controller_t *ctrl,
                                                    ul_ecat_slave_on_mailbox_rx_t cb,
