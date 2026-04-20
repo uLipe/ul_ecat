@@ -207,6 +207,63 @@ static size_t handle_download_init(const uint8_t *req, uint8_t *reply, size_t re
     return COE_FRAME_HDR_TOTAL;
 }
 
+/* SDO Info: Get OD List request -> response. Single-frame only (no fragmentation):
+ * if the list does not fit in the reply buffer, indices are truncated and the
+ * "incomplete" field stays at 0. Subsequent fragmented requests are not yet
+ * supported and would need transfer state akin to upload segmented. */
+static size_t handle_sdo_info(const uint8_t *frame, uint8_t *reply, size_t reply_cap,
+                              const uint8_t *info_req)
+{
+    uint8_t opcode = info_req[0];
+    if (opcode != UL_ECAT_SDO_INFO_OP_LIST_REQ) {
+        return 0;  /* unsupported SDO Info opcode -> drop silently */
+    }
+    if (reply_cap < MBX_HDR_LEN + COE_HDR_LEN + 8u) {
+        return 0;
+    }
+    uint16_t list_type = (uint16_t)info_req[4] | ((uint16_t)info_req[5] << 8);
+
+    /* Only LIST_ALL is implemented; other types reply with an empty list. */
+
+    /* Build response into the reply buffer directly. */
+    uint8_t *info_resp = reply + MBX_HDR_LEN + COE_HDR_LEN;
+    info_resp[0] = UL_ECAT_SDO_INFO_OP_LIST_RESP;
+    info_resp[1] = 0;
+    info_resp[2] = info_resp[3] = 0;            /* fragments left = 0 */
+    info_resp[4] = (uint8_t)(list_type & 0xFFu);
+    info_resp[5] = (uint8_t)((list_type >> 8) & 0xFFu);
+
+    size_t out_off = 6u;
+    uint16_t indices_added = 0u;
+    if (list_type == UL_ECAT_SDO_INFO_LIST_ALL) {
+        const ul_ecat_od_entry_t *e0 = ul_ecat_od_first();
+        size_t n = ul_ecat_od_entries_count();
+        uint16_t prev_index = 0xFFFFu;
+        for (size_t i = 0; i < n; i++) {
+            uint16_t idx = e0[i].index;
+            if (idx == prev_index) {
+                continue;  /* dedupe (same index, multiple subindexes) */
+            }
+            prev_index = idx;
+            if (MBX_HDR_LEN + COE_HDR_LEN + out_off + 2u > reply_cap) {
+                break;
+            }
+            info_resp[out_off++] = (uint8_t)(idx & 0xFFu);
+            info_resp[out_off++] = (uint8_t)((idx >> 8) & 0xFFu);
+            indices_added++;
+        }
+    }
+
+    uint16_t body_len = (uint16_t)out_off;
+    /* Mailbox header: copy then patch length (CoE service = SDO Info). */
+    memcpy(reply, frame, MBX_HDR_LEN);
+    w16le(reply, (uint16_t)(COE_HDR_LEN + body_len));
+    reply[MBX_HDR_LEN]     = 0x00u;
+    reply[MBX_HDR_LEN + 1] = (uint8_t)(UL_ECAT_COE_SVC_SDO_INFO << 4);
+    (void)indices_added;
+    return MBX_HDR_LEN + COE_HDR_LEN + body_len;
+}
+
 size_t ul_ecat_slave_coe_process(const uint8_t *frame, size_t len,
                                  uint8_t *reply, size_t reply_cap)
 {
@@ -219,7 +276,11 @@ size_t ul_ecat_slave_coe_process(const uint8_t *frame, size_t len,
         return 0;
     }
     const uint8_t *coe = frame + MBX_HDR_LEN;
-    if (coe_service(coe) != UL_ECAT_COE_SVC_SDO_REQ) {
+    uint8_t svc = coe_service(coe);
+    if (svc == UL_ECAT_COE_SVC_SDO_INFO) {
+        return handle_sdo_info(frame, reply, reply_cap, frame + MBX_HDR_LEN + COE_HDR_LEN);
+    }
+    if (svc != UL_ECAT_COE_SVC_SDO_REQ) {
         return 0;
     }
     const uint8_t *sdo = frame + MBX_HDR_LEN + COE_HDR_LEN;

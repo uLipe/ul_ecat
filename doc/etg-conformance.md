@@ -22,7 +22,8 @@ Reference documents: ETG.1000 (protocol), ETG.2000 (ESI), ETG.2010 (SII), ETG.22
 | SyncManager (SM0-SM3) | Basic | Register layout defined; SM0/SM1 mailbox config validated on INIT->PREOP transition; SM2/SM3 process data not yet validated |
 | FMMU | Not yet | Not emulated in software backend; hardware-managed on LAN9252 |
 | Mailbox protocol | Basic | SM0 full-write detection + SM_STATUS MBX_FULL toggle; SM1 reply API; counter/type header helpers; handler callback via `ul_ecat_slave_controller_set_mailbox_handler`. No fragmentation, no watchdog, no buffer re-read on failure. |
-| CoE / Object Dictionary | Not yet | No SDO server, no OD entries |
+| CoE / Object Dictionary | Basic | Generic OD framework (`ul_ecat_slave_od.h`) with table install, lookup, RO/WO/RW flags. Generated CiA 301 mandatory objects: 0x1000 Device Type, 0x1008 Device Name, 0x1009 HW Version, 0x100A SW Version, 0x1018 Identity (subindexes 0..4). Default CoE handler installed on controller init. |
+| CoE / SDO server | Basic | Expedited upload + download, segmented upload (objects > 4B), SDO Info Get OD List. Standard abort codes (0x06020000 / 0x06090011 / 0x06010002 / 0x05030000 / 0x06070010). Segmented download not yet implemented (returns abort 0x08000000). |
 | SII / EEPROM | Not yet | No SII content, no EEPROM read via ESC registers |
 | ESI XML | Not yet | No generated XML device description |
 | Distributed Clocks (slave side) | Not yet | No SYNC event handling |

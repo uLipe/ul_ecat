@@ -78,6 +78,12 @@ const ul_ecat_od_entry_t *ul_ecat_od_lookup(uint16_t index, uint8_t subindex);
  */
 int ul_ecat_od_index_exists(uint16_t index);
 
+/** Pointer to the first entry of the installed table (NULL if none). */
+const ul_ecat_od_entry_t *ul_ecat_od_first(void);
+
+/** Number of entries in the installed table. */
+size_t ul_ecat_od_entries_count(void);
+
 /**
  * Read up to @p cap bytes from the entry's storage into @p dst.
  * For string types reads up to @c entry->length bytes (caller may trim trailing NUL externally).

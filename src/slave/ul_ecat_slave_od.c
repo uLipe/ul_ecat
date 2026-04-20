@@ -28,6 +28,19 @@ const ul_ecat_od_entry_t *ul_ecat_od_lookup(uint16_t index, uint8_t subindex)
     return NULL;
 }
 
+const ul_ecat_od_entry_t *ul_ecat_od_first(void)
+{
+    if (g_table == NULL || g_table->entries == NULL || g_table->count == 0u) {
+        return NULL;
+    }
+    return g_table->entries;
+}
+
+size_t ul_ecat_od_entries_count(void)
+{
+    return (g_table != NULL) ? g_table->count : 0u;
+}
+
 int ul_ecat_od_index_exists(uint16_t index)
 {
     if (g_table == NULL || g_table->entries == NULL) {

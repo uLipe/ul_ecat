@@ -190,6 +190,47 @@ TEST_F(Coe, DownloadToReadOnlyAborts0x06010002) {
     EXPECT_EQ(code, 0x06010002u);
 }
 
+/* --- SDO Info: Get OD List (4e) --- */
+
+TEST_F(Coe, SdoInfoGetOdListReturnsExpectedIndices) {
+    /* Build a SDO Info request: CoE service = 0x08, opcode = 0x01, list type = 1 (ALL). */
+    std::vector<uint8_t> req(SM_LEN, 0);
+    /* mailbox header */
+    req[0] = 10; req[1] = 0;
+    req[2] = 0x00; req[3] = 0x10;
+    req[4] = 0x00;
+    req[5] = UL_ECAT_MBX_TYPE_COE;
+    /* CoE: service = SDO Info (0x08) */
+    req[6] = 0x00;
+    req[7] = (uint8_t)(0x08 << 4);
+    /* SDO Info request body */
+    req[8]  = 0x01;  /* opcode = Get OD List */
+    req[9]  = 0;
+    req[10] = 0;     /* incomplete = 0 */
+    req[11] = 0;
+    req[12] = 0x01;  /* list type = ALL */
+    req[13] = 0;
+
+    auto rep = sdo_round_trip(req);
+    /* CoE service in reply must be 0x08 (SDO Info). */
+    EXPECT_EQ(rep[7] >> 4, 0x08u);
+    EXPECT_EQ(rep[8], 0x02u);  /* opcode = Get OD List Response */
+    /* Bytes 12..N hold the indices (uint16 LE). The generated table has 5
+     * unique indices: 0x1000, 0x1008, 0x1009, 0x100A, 0x1018. */
+    std::vector<uint16_t> got;
+    for (size_t i = 14; i + 1 < rep.size(); i += 2) {
+        uint16_t v = (uint16_t)rep[i] | ((uint16_t)rep[i + 1] << 8);
+        if (v == 0u) break;
+        got.push_back(v);
+    }
+    ASSERT_GE(got.size(), 5u);
+    EXPECT_EQ(got[0], 0x1000u);
+    EXPECT_EQ(got[1], 0x1008u);
+    EXPECT_EQ(got[2], 0x1009u);
+    EXPECT_EQ(got[3], 0x100Au);
+    EXPECT_EQ(got[4], 0x1018u);
+}
+
 /* --- Segmented upload (4d) --- */
 
 TEST_F(Coe, UploadDeviceNameSegmentedReassembles) {

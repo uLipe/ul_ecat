@@ -27,8 +27,18 @@
 extern "C" {
 #endif
 
-#define UL_ECAT_COE_SVC_SDO_REQ  0x02u
-#define UL_ECAT_COE_SVC_SDO_RESP 0x03u
+#define UL_ECAT_COE_SVC_SDO_REQ      0x02u
+#define UL_ECAT_COE_SVC_SDO_RESP     0x03u
+#define UL_ECAT_COE_SVC_SDO_INFO     0x08u
+
+/* SDO Info opcodes (ETG.1000 cap.5.6.3). */
+#define UL_ECAT_SDO_INFO_OP_LIST_REQ   0x01u
+#define UL_ECAT_SDO_INFO_OP_LIST_RESP  0x02u
+
+/* SDO Info object list types. */
+#define UL_ECAT_SDO_INFO_LIST_ALL     0x01u
+#define UL_ECAT_SDO_INFO_LIST_RXPDO   0x02u
+#define UL_ECAT_SDO_INFO_LIST_TXPDO   0x03u
 
 /* SDO command-specifier upper bits (ccs/scs in CiA 301). */
 #define UL_ECAT_SDO_CCS_DOWNLOAD_REQ_INIT  (1u << 5)
